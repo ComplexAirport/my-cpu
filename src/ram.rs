@@ -23,9 +23,9 @@ impl RamAddr {
 
 /// Smallest addressable unit in our `RAM`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct MemUnit(pub u8);
+pub struct RamUnit(pub u8);
 
-impl MemUnit {
+impl RamUnit {
     pub fn new() -> Self {
         Self(0u8)
     }
@@ -40,7 +40,7 @@ impl MemUnit {
 /// Represents a free memory segment in the RAM.
 #[derive(Clone, Debug)]
 struct FreeSegment {
-    start: usize,
+    start: RamAddr,
     size: usize,
 }
 
@@ -49,54 +49,70 @@ struct FreeSegment {
 /// RAM with Segment List Allocator
 pub struct RAM {
     /// Our actual memory storage.
-    pub mem: Box<[MemUnit]>,
+    pub mem: Box<[RamUnit]>,
 
     /// List of free segments, sorted by `start` address.
     free_segments: Vec<FreeSegment>,
 }
 
+/** `new` method */
 impl RAM {
     /// Create a new `RAM` with the entire region free.
     pub fn new(size: usize) -> Self {
         Self {
-            mem: vec![MemUnit::new(); size].into_boxed_slice(),
+            mem: vec![RamUnit::new(); size].into_boxed_slice(),
             // Initially, we have one big free segment spanning the entire memory.
             free_segments: vec![FreeSegment {
-                start: 0,
+                start: RamAddr(0),
                 size,
             }],
         }
     }
 }
 
+
 /** RAM methods related to __general__ memory allocating */
 impl RAM {
-    /// Allocates a contiguous block of `size` bytes and returns the starting address.
+    /// Allocates a contiguous block of `size` bytes **at or after** the specified address
+    /// and returns the starting address. In other words, tries to allocate `size` bytes in the
+    /// **specified range** - **[`start`; )**
     /// # Errors
     /// - `RAMError::OutOfMemory(size)` if there's no free segment big enough.
-    pub fn allocate(&mut self, size: usize) -> Result<RamAddr, RAMError> {
+    pub fn allocate_at(&mut self, size: usize, start: RamAddr) -> Result<RamAddr, RAMError> {
+        // Usually when 0 bytes try to be allocated, an error happened somewhere
         if size == 0 {
             return Err(RAMError::OutOfMemory(size));
         }
 
         for (i, seg) in self.free_segments.iter_mut().enumerate() {
+            let alloc_start = seg.start;
+            if alloc_start < start {
+                continue
+            }
             if seg.size >= size {
-                let alloc_start = seg.start;
                 let alloc_end = seg.start + size;
 
-                seg.start += size;
+                seg.start.inc(size);
                 seg.size -= size;
 
                 if seg.size == 0 {
                     self.free_segments.remove(i);
                 }
 
-                return Ok(RamAddr(alloc_start));
+                return Ok(alloc_start);
             }
         }
 
         // No segment could accommodate `size`
         Err(RAMError::OutOfMemory(size))
+    }
+
+    /// Allocates a contiguous block of `size` bytes and returns the starting address.
+    /// # Errors
+    /// - `RAMError::OutOfMemory(size)` if there's no free segment big enough.
+    pub fn allocate(&mut self, size: usize) -> Result<RamAddr, RAMError> {
+        /// Basically the same as `allocate_at` with `start` = 0
+        self.allocate_at(size, RamAddr(0))
     }
 
     /// Allocate bytes to the memory
@@ -116,9 +132,9 @@ impl RAM {
     /// # Errors
     /// - `RAMError::InvalidFree(addr, size)` if `[addr .. addr + size)` is out of bounds or invalid.
     pub fn free(&mut self, addr: RamAddr, size: usize) -> Result<(), RAMError> {
-        let start = addr.0;
+        let start = addr;
 
-        if start.checked_add(size).unwrap_or(usize::MAX) > self.mem.len() {
+        if start.0.checked_add(size).unwrap_or(usize::MAX) > self.mem.len() {
             return Err(RAMError::InvalidFree(addr, size));
         }
 
@@ -158,7 +174,7 @@ impl RAM {
                 // They overlap or are adjacent; merge them
                 let merged_start = curr_start.min(next_start);
                 let merged_end = curr_end.max(next_end);
-                let merged_size = merged_end - merged_start;
+                let merged_size = merged_end.0 - merged_start.0;
 
                 self.free_segments[i].start = merged_start;
                 self.free_segments[i].size = merged_size;
@@ -188,12 +204,12 @@ impl RAM {
     /** Segment Inspection */
     /// Checks if a given range `[addr .. addr + size)` is fully free.
     pub fn is_free(&self, addr: RamAddr, size: usize) -> bool {
-        let start = addr.0;
-        let end = match start.checked_add(size) {
-            Some(e) => e,
+        let start = addr;
+        let end = match start.0.checked_add(size) {
+            Some(e) => RamAddr(e),
             None => return false,
         };
-        if end > self.mem.len() {
+        if end.0 > self.mem.len() {
             return false;
         }
 
@@ -220,7 +236,7 @@ impl RAM {
             }
             // Partial coverage, move current up
             if segment_end > current {
-                let covered = segment_end - current;
+                let covered = segment_end.0 - current.0;
                 remaining = remaining.saturating_sub(covered);
                 current = segment_end;
             }
@@ -250,7 +266,7 @@ impl RAM {
     }
 
     /// Get a shared reference to the `MemUnit` at `addr`, if valid.
-    pub fn at<T>(&self, addr: T) -> Result<&MemUnit, RAMError>
+    pub fn at<T>(&self, addr: T) -> Result<&RamUnit, RAMError>
     where
         T: Into<RamAddr>,
     {
@@ -289,7 +305,7 @@ impl RAM {
 
 /** RAM methods related to reading/allocating integers `u8` to `u128` and `i8` to `i128` */
 impl RAM {
-    /* Unsigned */
+    /** Unsigned */
     pub fn alloc_u8(&mut self, val: u8) -> Result<RamAddr, RAMError> {
         self.alloc_bytes(&val.to_le_bytes())
     }
@@ -405,9 +421,9 @@ impl AsRef<RamAddr> for RamAddr {
     }
 }
 
-impl<T: Into<u8>> From<T> for MemUnit {
+impl<T: Into<u8>> From<T> for RamUnit {
     fn from(value: T) -> Self {
-        MemUnit(value.into())
+        RamUnit(value.into())
     }
 }
 
@@ -417,9 +433,8 @@ impl std::fmt::Debug for RamAddr {
     }
 }
 
-impl std::fmt::Debug for MemUnit {
+impl std::fmt::Debug for RamUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
-

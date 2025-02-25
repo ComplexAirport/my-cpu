@@ -1,6 +1,6 @@
 use std::io::Write;
 
-pub use crate::ram::{RamAddr, MemUnit, RAM};
+pub use crate::ram::{RamAddr, RamUnit, RAM};
 pub use crate::error::{ErrorType, CPUError};
 
 
@@ -446,7 +446,7 @@ impl CPU {
 
     /** Fetching methods */
     /// Fetch the value in RAM at the specified address
-    fn fetch_byte_at_addr(&self, addr: RamAddr) -> Result<&MemUnit, ErrorType> {
+    fn fetch_byte_at_addr(&self, addr: RamAddr) -> Result<&RamUnit, ErrorType> {
         Ok(self.ram.at(addr)?)
     }
 
