@@ -4,6 +4,9 @@ mod ram;
 mod cpu;
 mod error;
 
+#[macro_use]
+mod macros;
+
 use cpu::{*};
 
 struct InstrBuilder {

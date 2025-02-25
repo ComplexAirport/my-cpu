@@ -1,44 +1,165 @@
 use std::io::Write;
-
+use crate::define_opcodes;
 pub use crate::ram::{RamAddr, RamUnit, RAM};
 pub use crate::error::{ErrorType, CPUError};
 
-
-/// Represents a CPU instruction \
-/// For example: `halt`, `jump`, `add`, etc.
+/// Represents a CPU instruction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CPUInstr {
-    Halt,       // Halts the program (no more instructions are executing)
-    Add,        // Adds [1] to [2] and stores the result in accumulator register
-    Sub,        // Subtracts [1] from [2] and stores the result in accumulator register
-    Mul,        // Multiplies [1] by [2] and stores the result in accumulator register
-    Set,        // Sets the value of [1] to [2]
-    Load,       // Loads the value at [1] to accumulator register
-    Jump,       // Jumps to specified address
-    SysCall,    // Invokes syscall
+    /// Halts the cpu (no more instructions are executing)
+    Halt,
+
+    /// Sets value of #1 to value at #2 (Note: #1 is not allowed to be an immediate value)
+    Set,
+
+    /// Increments the value at #1 (Note: #1 is not allowed to be an immediate value)
+    Inc,
+
+    /// Decrements the value at #1 (Note: #1 is not allowed to be an immediate value)
+    Dec,
+
+
+    /// Adds the value at #1 to the value at #2 and stores the result in accu register
+    Add,
+
+    /// Subtracts the value at #2 from the value at #1 and stores the result in accu register
+    Sub,
+
+    /// Multiplies the value at #1 and the value at #2 and stores the result in accu register
+    Mul,
+
+    /// Does the value at #1 modulo the value at #2 and stores the result in accu register todo
+    Mod,
+
+    /// Divides the value at #1 by the value at #2 (round division, floors the result)
+    /// and stores the result in accu register todo
+    Div,
+
+
+    /// Adds the value at #1 as float to the value at #2 as float and stores the result in accu register todo
+    FAdd,
+
+    /// Subtracts the value at #2 as float from the value at #1 as float
+    /// and stores the result in accu register todo
+    FSub,
+
+    /// Multiplies the value at #2 as float from the value at #1 as float
+    /// and stores the result in accu register todo
+    FMul,
+
+    /// Divides the value at #1 by the value at  #2 (float division, does not floor the result)
+    /// and stores the result in accu register todo
+    FDiv,
+
+
+    /// Does boolean (the value at #1 **AND** the value at #2) and stores the result in accu register todo
+    And,
+
+    /// Does boolean (the value at #1 **OR** the value at #2) and stores the result in accu register todo
+    Or,
+
+    /// Does boolean (the value at #1 **XOR** the value at #2) and stores the result in accu register todo
+    Xor,
+
+    /// Does boolean (**NOT** the value at #1) and stores the result in accu register todo
+    LogicalNot,
+
+
+    /// Shifts the value at #1 left by `n` positions and stores the result in accu register todo
+    Shl,
+
+    /// Shifts the value at #1 right by `n` positions and stores the result in accu register todo
+    Shr,
+
+    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register todo
+    BitwiseNot,
+
+
+    /// Jumps to the specified **memory address** (_'jumps'_ means the next instruction will be
+    /// the byte at the specified memory address)
+    Jump,
+
+    /// Jumps to the specified memory address (#1) if the value at #2 is non-zero
+    JumpIf,
+
+    /// Jumps to the specified memory address (#1) if the value at #2 is zero
+    JumpIfNot,
+
+    /// Jumps to the specified memory address (#1) if the value at #2 is greater than the value at #3
+    JumpIfGreater,
+
+    /// Jumps to the specified memory address (#1) if the value at #2 is less than the value at #3
+    JumpIfLess,
+
+    /// Jumps to the specified memory address (#1) if the value at #2 is equal to the value at #3
+    JumpIfEqual
 }
 
 impl CPUInstr {
-    pub const HALT: u8      = 0;
-    pub const ADD: u8       = 1;
-    pub const SUB: u8       = 2;
-    pub const MUL: u8       = 3;
-    pub const SET: u8       = 4;
-    pub const LOAD: u8      = 5;
-    pub const JUMP: u8      = 6;
-    pub const SYSCALL: u8   = 7;
+     define_opcodes!(
+        HALT,
+
+        SET,
+
+        INC,
+        DEC,
+        ADD,
+        SUB,
+        MUL,
+        MOD,
+        DIV,
+
+        F_ADD,
+        F_SUB,
+        F_MUL,
+        F_DIV,
+
+        AND,
+        OR,
+        XOR,
+        LOGICAL_NOT,
+
+        SHL,
+        SHR,
+        BITWISE_NOT,
+
+        JUMP,
+        JUMP_IF,
+        JUMP_IF_NOT,
+        JUMP_IF_GREATER,
+        JUMP_IF_LESS,
+        JUMP_IF_EQUAL
+    );
 
     /// Represents the instruction in a byte
     pub const fn as_byte(&self) -> u8 {
         match &self {
             CPUInstr::Halt => Self::HALT,
+            CPUInstr::Set => Self::SET,
+            CPUInstr::Inc => Self::INC,
+            CPUInstr::Dec => Self::DEC,
             CPUInstr::Add => Self::ADD,
             CPUInstr::Sub => Self::SUB,
             CPUInstr::Mul => Self::MUL,
-            CPUInstr::Set => Self::SET,
-            CPUInstr::Load => Self::LOAD,
+            CPUInstr::Mod => Self::MOD,
+            CPUInstr::Div => Self::DIV,
+            CPUInstr::FAdd => Self::F_ADD,
+            CPUInstr::FSub => Self::F_SUB,
+            CPUInstr::FMul => Self::F_MUL,
+            CPUInstr::FDiv => Self::F_DIV,
+            CPUInstr::And => Self::F_ADD,
+            CPUInstr::Or => Self::OR,
+            CPUInstr::Xor => Self::XOR,
+            CPUInstr::LogicalNot => Self::LOGICAL_NOT,
+            CPUInstr::Shl => Self::SHL,
+            CPUInstr::Shr => Self::SHR,
+            CPUInstr::BitwiseNot => Self::BITWISE_NOT,
             CPUInstr::Jump => Self::JUMP,
-            CPUInstr::SysCall => Self::SYSCALL,
+            CPUInstr::JumpIf => Self::JUMP_IF,
+            CPUInstr::JumpIfNot => Self::JUMP_IF_NOT,
+            CPUInstr::JumpIfGreater => Self::JUMP_IF_GREATER,
+            CPUInstr::JumpIfLess => Self::JUMP_IF_LESS,
+            CPUInstr::JumpIfEqual => Self::JUMP_IF_EQUAL,
         }
     }
 
@@ -46,13 +167,31 @@ impl CPUInstr {
     pub const fn from_byte(byte: u8) -> Result<Self, CPUError> {
         match byte {
             Self::HALT => Ok(CPUInstr::Halt),
+            Self::SET => Ok(CPUInstr::Set),
+            Self::INC => Ok(CPUInstr::Inc),
+            Self::DEC => Ok(CPUInstr::Dec),
             Self::ADD => Ok(CPUInstr::Add),
             Self::SUB => Ok(CPUInstr::Sub),
             Self::MUL => Ok(CPUInstr::Mul),
-            Self::SET => Ok(CPUInstr::Set),
-            Self::LOAD => Ok(CPUInstr::Load),
+            Self::MOD => Ok(CPUInstr::Mod),
+            Self::DIV => Ok(CPUInstr::Div),
+            Self::F_ADD => Ok(CPUInstr::FAdd),
+            Self::F_SUB => Ok(CPUInstr::FSub),
+            Self::F_MUL => Ok(CPUInstr::FMul),
+            Self::F_DIV => Ok(CPUInstr::FDiv),
+            Self::F_ADD => Ok(CPUInstr::And),
+            Self::OR => Ok(CPUInstr::Or),
+            Self::XOR => Ok(CPUInstr::Xor),
+            Self::LOGICAL_NOT => Ok(CPUInstr::LogicalNot),
+            Self::SHL => Ok(CPUInstr::Shl),
+            Self::SHR => Ok(CPUInstr::Shr),
+            Self::BITWISE_NOT => Ok(CPUInstr::BitwiseNot),
             Self::JUMP => Ok(CPUInstr::Jump),
-            Self::SYSCALL => Ok(CPUInstr::SysCall),
+            Self::JUMP_IF => Ok(CPUInstr::JumpIf),
+            Self::JUMP_IF_NOT => Ok(CPUInstr::JumpIfNot),
+            Self::JUMP_IF_GREATER => Ok(CPUInstr::JumpIfGreater),
+            Self::JUMP_IF_LESS => Ok(CPUInstr::JumpIfLess),
+            Self::JUMP_IF_EQUAL => Ok(CPUInstr::JumpIfEqual),
             _ => Err(CPUError::InvalidInstruction(byte))
         }
     }
@@ -78,10 +217,12 @@ pub enum OperandType {
 }
 
 impl OperandType {
-    pub const MEMORY_ADDRESS: u8    = 0;
-    pub const REGISTER: u8          = 1;
-    pub const FLAG: u8              = 2;
-    pub const IMMEDIATE: u8         = 4;
+    define_opcodes!(
+        MEMORY_ADDRESS,
+        REGISTER,
+        FLAG,
+        IMMEDIATE
+    );
 
     /// Represents the operand type as a byte
     pub const fn as_byte(&self) -> u8 {
@@ -115,9 +256,12 @@ pub enum CPUFlag {
 }
 
 impl CPUFlag {
-    pub const ZERO: u8     = 0;
-    pub const SIGN: u8     = 1;
-    pub const OVERFLOW: u8 = 2;
+    define_opcodes!(
+        ZERO,
+        SIGN,
+        OVERFLOW,
+        IMMEDIATE
+    );
 
     /// Represents the flag as a byte
     pub const fn as_byte(&self) -> u8 {
@@ -245,13 +389,31 @@ impl CPU {
 
         let res = match self.instr_reg {
             CPUInstr::Halt => self.execute_halt(),
+            CPUInstr::Set => self.execute_set(),
+            CPUInstr::Inc => self.execute_inc(),
+            CPUInstr::Dec => self.execute_dec(),
             CPUInstr::Add => self.execute_add(),
             CPUInstr::Sub => self.execute_sub(),
             CPUInstr::Mul => self.execute_mul(),
-            CPUInstr::Set => self.execute_set(),
-            CPUInstr::Load => Ok(()),
+            CPUInstr::Mod => self.execute_mod(),
+            CPUInstr::Div => self.execute_div(),
+            CPUInstr::FAdd => self.execute_fadd(),
+            CPUInstr::FSub => self.execute_fsub(),
+            CPUInstr::FMul => self.execute_fmul(),
+            CPUInstr::FDiv => self.execute_fdiv(),
+            CPUInstr::And => self.execute_and(),
+            CPUInstr::Or => self.execute_or(),
+            CPUInstr::Xor => self.execute_xor(),
+            CPUInstr::LogicalNot => self.execute_l_not(),
+            CPUInstr::Shl => self.execute_shl(),
+            CPUInstr::Shr => self.execute_shr(),
+            CPUInstr::BitwiseNot => self.execute_b_not(),
             CPUInstr::Jump => self.execute_jump(),
-            CPUInstr::SysCall => Ok(())
+            CPUInstr::JumpIf => self.execute_jump_if(),
+            CPUInstr::JumpIfNot => self.execute_jump_if_not(),
+            CPUInstr::JumpIfGreater => self.execute_jump_if_greater(),
+            CPUInstr::JumpIfLess => self.execute_jump_if_less(),
+            CPUInstr::JumpIfEqual => self.execute_jump_if_equal(),
         };
 
         self.inc_instruction_counter();
@@ -269,30 +431,14 @@ impl CPU {
 
 /** Main CPU instruction methods */
 impl CPU {
-    /// Add instruction
-    fn execute_add(&mut self) -> Result<(), ErrorType> {
-        self.binary_operation(|x, y| x.overflowing_add(y))
-    }
-
-    /// Sub instruction
-    fn execute_sub(&mut self) -> Result<(), ErrorType> {
-        self.binary_operation(|x, y| x.overflowing_sub(y))
-    }
-
-    /// Mul instruction
-    fn execute_mul(&mut self) -> Result<(), ErrorType> {
-        self.binary_operation(|x, y| x.overflowing_mul(y))
-    }
-
-    // Jump instruction
-    fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let mut pc = self.prog_counter.unwrap();
-        let addr = self.fetch_mem_addr(pc)?;
-        self.set_program_counter(addr);
+    /// Halts instruction
+    /// Sets the program counter to `None`
+    fn execute_halt(&mut self) -> Result<(), ErrorType> {
+        self.halt_program_counter();
         Ok(())
     }
 
-    // Set instruction
+    /// Set instruction
     fn execute_set(&mut self) -> Result<(), ErrorType> {
         let to_set_type = self.read_operand_type()?;
         let mut pc = self.prog_counter.unwrap();
@@ -315,7 +461,7 @@ impl CPU {
                 Ok(())
             }
             OperandType::Flag => {
-                let to_set = self.fetch_flag_number(pc)? as u8;
+                let to_set = self.fetch_flag_number(pc)?;
                 pc.inc(FLAG_TYPE_SIZE);
                 self.set_program_counter(pc);
                 let value = self.read_operand_value()? != 0;
@@ -328,12 +474,70 @@ impl CPU {
         }
     }
 
-    /// Halts instruction
-    /// Sets the program counter to `None`
-    fn execute_halt(&mut self) -> Result<(), ErrorType> {
-        self.halt_program_counter();
+    /// Inc instruction
+    fn execute_inc(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    /// Dec instruction
+    fn execute_dec(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    /// Add instruction
+    fn execute_add(&mut self) -> Result<(), ErrorType> {
+        self.binary_operation(|x, y| x.overflowing_add(y))
+    }
+
+    /// Sub instruction
+    fn execute_sub(&mut self) -> Result<(), ErrorType> {
+        self.binary_operation(|x, y| x.overflowing_sub(y))
+    }
+
+    /// Mul instruction
+    fn execute_mul(&mut self) -> Result<(), ErrorType> {
+        self.binary_operation(|x, y| x.overflowing_mul(y))
+    }
+
+    fn execute_mod(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_div(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_fadd(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_fsub(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_fmul(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_fdiv(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_and(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_or(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_xor(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_l_not(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_shl(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_shr(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_b_not(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    /// Jump instruction
+    fn execute_jump(&mut self) -> Result<(), ErrorType> {
+        let mut pc = self.prog_counter.unwrap();
+        let addr = self.fetch_mem_addr(pc)?;
+        self.set_program_counter(addr);
         Ok(())
     }
+
+    fn execute_jump_if(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_jump_if_greater(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_jump_if_less(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+
+    fn execute_jump_if_equal(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
 }
 
 
@@ -610,7 +814,7 @@ impl CPU {
             .unwrap();
 
         println!("Instruction {}\n", self.instruction_counter);
-        
+
         // Show the ram
         for chunk  in self.ram.mem.chunks(16) {
             let mut s = String::new();
@@ -620,7 +824,7 @@ impl CPU {
             }
             println!("{}", s);
         }
-        
+
         // Show the value of registers
         for i in (0..GEN_REG_COUNT / 2) {
             let reg1 = i;
