@@ -2,6 +2,7 @@
 
 mod ram;
 mod cpu;
+mod error;
 
 use cpu::{*};
 
@@ -9,7 +10,7 @@ struct InstrBuilder {
     result: Vec<u8>,
 
     /// Address of the previous instruction and its size in bytes
-    instr_addrs: Vec<(MemAddr, usize)>
+    instr_addrs: Vec<(RamAddr, usize)>
 }
 
 impl InstrBuilder {
@@ -70,7 +71,7 @@ impl InstrBuilder {
         self
     }
 
-    pub fn jump(mut self, addr: MemAddr) -> Self {
+    pub fn jump(mut self, addr: RamAddr) -> Self {
         let before = self.result.len();
         self.result.push(CPUInstr::JUMP);
         self.result.extend(addr.0.to_le_bytes());
@@ -92,7 +93,7 @@ impl InstrBuilder {
             self.instr_addrs.push((CPU_START_ADDR, size))
         } else {
             let (addr, s) = self.instr_addrs.last().unwrap();
-            self.instr_addrs.push((MemAddr(addr.0 + s), size))
+            self.instr_addrs.push((RamAddr(addr.0 + s), size))
         }
     }
 

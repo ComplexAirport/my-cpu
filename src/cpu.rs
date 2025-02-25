@@ -1,10 +1,10 @@
 use std::io::Write;
-pub use crate::ram::{MemAddr, MemUnit, RAM};
 
-pub type ErrorType = Box<dyn std::error::Error>;
+pub use crate::ram::{RamAddr, MemUnit, RAM};
+pub use crate::error::{ErrorType, CPUError};
 
 
-/// Represents the primary part of a CPU instruction - the instruction itself
+/// Represents a CPU instruction \
 /// For example: `halt`, `jump`, `add`, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CPUInstr {
@@ -28,7 +28,7 @@ impl CPUInstr {
     pub const JUMP: u8      = 6;
     pub const SYSCALL: u8   = 7;
 
-    /// Represents the primary instruction in a byte
+    /// Represents the instruction in a byte
     pub const fn as_byte(&self) -> u8 {
         match &self {
             CPUInstr::Halt => Self::HALT,
@@ -42,7 +42,7 @@ impl CPUInstr {
         }
     }
 
-    /// Read a primary instruction from a byte
+    /// Read an instruction from a byte
     pub const fn from_byte(byte: u8) -> Result<Self, CPUError> {
         match byte {
             Self::HALT => Ok(CPUInstr::Halt),
@@ -60,6 +60,15 @@ impl CPUInstr {
 
 
 /// Represents the type of the operand
+/// # Example:
+/// For example, in a [`CpuInstr::Add`] instruction,
+/// both operands are preceded by the operand type like this: \
+/// [`CPUInstr::ADD`] \
+/// [`OperandType::IMMEDIATE`] \
+/// `100` \
+/// [`OperandType::IMMEDIATE`] \
+/// `200` \
+/// Adds immediate value `100` to immediate value `200`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OperandType {
     MemoryAddress,  // Represents a memory address
@@ -97,13 +106,12 @@ impl OperandType {
 }
 
 
-/// Represents a flag in the CPU (zero, carry, etc.)
+/// Represents a flag in the CPU (zero, overflow, etc.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CPUFlag {
     Zero, 
     Sign, 
     Overflow,
-    // Carry
 }
 
 impl CPUFlag {
@@ -120,7 +128,7 @@ impl CPUFlag {
         }
     }
 
-    /// Reads the operand type from a byte
+    /// Reads the flag type from a byte
     pub const fn from_byte(byte: u8) -> Result<Self, CPUError> {
         match byte {
             Self::ZERO => Ok(CPUFlag::Zero),
@@ -135,11 +143,11 @@ impl CPUFlag {
 /// Represents the amount of general registers in the processor
 pub const GEN_REG_COUNT: usize = 8;
 
-/// Represents the type of general registers
+/// Represents the type of the general registers
 pub type RegType = i64;
 
 /// Represents the address of the first instruction for the CPU
-pub const CPU_START_ADDR: MemAddr = MemAddr(0x0_usize);
+pub const CPU_START_ADDR: RamAddr = RamAddr(0x0_usize);
 
 /// Represents the amount of bytes 1 cpu instruction takes
 pub const INSTRUCTION_SIZE: usize = 1;
@@ -160,7 +168,8 @@ pub const FLAG_TYPE_SIZE: usize = 1;
 pub const IMMEDIATE_VALUE_SIZE: usize = 8;
 
 
-/// Represents the CPU
+/// Represents the CPU itself
+///
 pub struct CPU {
     pub ram: RAM,
 
@@ -174,7 +183,7 @@ pub struct CPU {
     instr_reg: CPUInstr,
 
     /// Holds the address of the next instruction to execute
-    prog_counter: Option<MemAddr>,
+    prog_counter: Option<RamAddr>,
 
     /// Set when an operation results in zero
     zero_flag: bool,
@@ -188,8 +197,9 @@ pub struct CPU {
     /// Indicates when an arithmetic overflow occurs in signed arithmetic.
     overflow_flag: bool,
 
-    /// TODO: remove
-    ticks: usize
+    /// Counts the instructions.
+    /// At the moment exists only for debugging purposes, might delete later
+    instruction_counter: usize
 }
 
 
@@ -205,7 +215,7 @@ impl CPU {
             zero_flag: false,
             sign_flag: false,
             overflow_flag: false,
-            ticks: 0,
+            instruction_counter: 0,
         }
     }
 
@@ -244,12 +254,13 @@ impl CPU {
             CPUInstr::SysCall => Ok(())
         };
 
-        self.tick();
+        self.inc_instruction_counter();
         res
     }
 
-    fn tick(&mut self) {
-        self.ticks += 1;
+    /// At the moment only exists for debugging purposes, might delete later
+    fn inc_instruction_counter(&mut self) {
+        self.instruction_counter += 1;
         self.print();
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
@@ -328,13 +339,13 @@ impl CPU {
 
 /** General helper methods for CPU instructions */
 impl CPU {
-    /// Executes a binary operation. \
-    /// Accepts only overflowing operations which return `(RegType, bool)`. Second parameter is `true`
-    /// if the operation overflowed
+    /// Executes a binary operator. \
+    /// Accepts only overflowing operator which return `(RegType, bool)`. Second parameter is `true`
+    /// if the operator overflowed
     /// - Assigns the Accumulator register to the result of the operation
     /// - Sets the `Overflow` flag if the operation overflows.
-    /// - Sets the `Zero` flag if the result of the operation is zero.
-    /// - Sets the `Sign` flag if the result if the operation is negative.
+    /// - Sets the `Zero` flag if the result  is zero.
+    /// - Sets the `Sign` flag if the result is negative.
     fn binary_operation<F>(&mut self, op: F)
         -> Result<(), ErrorType>
     where
@@ -435,12 +446,12 @@ impl CPU {
 
     /** Fetching methods */
     /// Fetch the value in RAM at the specified address
-    fn fetch_byte_at_addr(&self, addr: MemAddr) -> Result<&MemUnit, ErrorType> {
+    fn fetch_byte_at_addr(&self, addr: RamAddr) -> Result<&MemUnit, ErrorType> {
         Ok(self.ram.at(addr)?)
     }
 
     /// Gets the register number from the address and returns the value at that register
-    fn fetch_value_from_reg(&self, addr: MemAddr) -> Result<RegType, ErrorType> {
+    fn fetch_value_from_reg(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
         let reg_number: usize = self.fetch_reg_number(addr)?;
         if reg_number == GEN_REG_COUNT { // The 9-th register is the accumulator register
             Ok(self.get_accu_reg())
@@ -450,36 +461,36 @@ impl CPU {
     }
 
     /// Reads a memory address from address and returns the value at that memory address
-    fn fetch_value_from_mem_addr(&self, addr: MemAddr) -> Result<RegType, ErrorType> {
+    fn fetch_value_from_mem_addr(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
         let mut mem_addr = self.fetch_mem_addr(addr)?;
         let val = self.ram.at(mem_addr)?;
         Ok(val.0 as RegType)
     }
 
     /// Reads a flag number from the address and returns a `CPUFlag` based on it
-    fn fetch_value_from_flag(&self, addr: MemAddr) -> Result<CPUFlag, ErrorType> {
+    fn fetch_value_from_flag(&self, addr: RamAddr) -> Result<CPUFlag, ErrorType> {
         let flag_number = self.fetch_flag_number(addr)?;
         Ok(CPUFlag::from_byte(flag_number)?)
     }
 
     /// Reads an immediate value and returns it as `RegType`
-    fn fetch_imm(&self, addr: MemAddr) -> Result<RegType, ErrorType> {
+    fn fetch_imm(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
         let value = self.ram.read_i64(addr)?;
         Ok(value)
     }
 
     /// Reads a register number from `addr`
-    fn fetch_reg_number(&self, addr: MemAddr) -> Result<usize, ErrorType> {
+    fn fetch_reg_number(&self, addr: RamAddr) -> Result<usize, ErrorType> {
         Ok(self.fetch_byte_at_addr(addr)?.0 as usize)
     }
 
     /// Reads a memory address from `addr`
-    fn fetch_mem_addr(&self, addr: MemAddr) -> Result<MemAddr, ErrorType> {
-        Ok(MemAddr(self.ram.read_u64(addr)? as usize))
+    fn fetch_mem_addr(&self, addr: RamAddr) -> Result<RamAddr, ErrorType> {
+        Ok(RamAddr(self.ram.read_u64(addr)? as usize))
     }
 
     /// Reads a flag number (u8, not a `CPUFlag`) from `addr`
-    fn fetch_flag_number(&self, addr: MemAddr) -> Result<u8, ErrorType> {
+    fn fetch_flag_number(&self, addr: RamAddr) -> Result<u8, ErrorType> {
         Ok(self.fetch_byte_at_addr(addr)?.0)
     }
 }
@@ -488,12 +499,12 @@ impl CPU {
 /** Program Counter related methods */
 impl CPU {
     /// Returns the value of the program counter - address of the next instruction
-    pub fn get_program_counter(&self) -> Option<MemAddr> {
+    pub fn get_program_counter(&self) -> Option<RamAddr> {
         self.prog_counter
     }
 
     /// Returns the value of the program counter - address of the next instruction
-    pub fn set_program_counter(&mut self, addr: MemAddr) {
+    pub fn set_program_counter(&mut self, addr: RamAddr) {
         self.prog_counter = Some(addr);
     }
 
@@ -589,45 +600,18 @@ impl CPU {
 }
 
 
-
-/** CPU Error Type */
-#[derive(Debug)]
-pub enum CPUError {
-    InvalidAddress(MemAddr),
-    InvalidInstruction(u8),
-    InvalidOperandType(u8),
-    InvalidRegister(usize),
-    InvalidFlag(u8),
-    OperandTypeNotAllowed(OperandType),
-}
-
-impl std::fmt::Display for CPUError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CPUError::InvalidAddress(addr) => write!(f, "Invalid ram address: {addr:?}"),
-            CPUError::InvalidInstruction(instr) => write!(f, "Invalid cpu instruction: {instr}"),
-            CPUError::InvalidOperandType(t) => write!(f, "Invalid operand type: {t}"),
-            CPUError::InvalidRegister(reg) => write!(f, "Invalid register number: {reg}"),
-            CPUError::InvalidFlag(flag) => write!(f, "Invalid flag: {flag}"),
-            CPUError::OperandTypeNotAllowed(t) => write!(f, "Operand type {t:?} is not allowed.")
-        }
-    }
-}
-
-impl std::error::Error for CPUError {}
-
-
-/** Prints the cpu state */
+/** Prints the cpu state. Only for debugging purposes */
 impl CPU {
     pub fn print(&self) {
-        // Clear the screen
+        // Clear the screen (only implemented for window)
         std::process::Command::new("cmd")
             .args(["/c", "cls"])
             .status()
             .unwrap();
 
-        println!("Tick: {}\n", self.ticks);
-
+        println!("Instruction {}\n", self.instruction_counter);
+        
+        // Show the ram
         for chunk  in self.ram.mem.chunks(16) {
             let mut s = String::new();
             for i in chunk {
@@ -636,15 +620,16 @@ impl CPU {
             }
             println!("{}", s);
         }
-
+        
+        // Show the value of registers
         for i in (0..GEN_REG_COUNT / 2) {
             let reg1 = i;
             let reg2 = GEN_REG_COUNT / 2 + i;
             println!("Reg {}\t= {}\t\tReg {}\t= {}",
-                reg1,
-                self.get_reg(reg1).unwrap(),
-                reg2,
-                self.get_reg(reg2).unwrap()
+                     reg1,
+                     self.get_reg(reg1).unwrap(),
+                     reg2,
+                     self.get_reg(reg2).unwrap()
             );
         }
 
