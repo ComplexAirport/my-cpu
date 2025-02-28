@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::ops::{BitAnd, BitOr, BitXor};
 use crate::define_opcodes;
 pub use crate::ram::{RamAddr, RamUnit, RAM};
 pub use crate::error::{ErrorType, CPUError};
@@ -12,13 +13,6 @@ pub enum CPUInstr {
     /// Sets value of #1 to value at #2 (Note: #1 is not allowed to be an immediate value)
     Set,
 
-    /// Increments the value at #1 (Note: #1 is not allowed to be an immediate value)
-    Inc,
-
-    /// Decrements the value at #1 (Note: #1 is not allowed to be an immediate value)
-    Dec,
-
-
     /// Adds the value at #1 to the value at #2 and stores the result in accu register
     Add,
 
@@ -28,51 +22,60 @@ pub enum CPUInstr {
     /// Multiplies the value at #1 and the value at #2 and stores the result in accu register
     Mul,
 
-    /// Does the value at #1 modulo the value at #2 and stores the result in accu register todo
+    /// Does the value at #1 modulo the value at #2 and stores the result in accu register
     Mod,
 
     /// Divides the value at #1 by the value at #2 (round division, floors the result)
-    /// and stores the result in accu register todo
+    /// and stores the result in accu register
     Div,
 
 
-    /// Adds the value at #1 as float to the value at #2 as float and stores the result in accu register todo
+    /// Adds the value at #1 as float to the value at #2 as float and stores the result in accu register
     FAdd,
 
     /// Subtracts the value at #2 as float from the value at #1 as float
-    /// and stores the result in accu register todo
+    /// and stores the result in accu register
     FSub,
 
     /// Multiplies the value at #2 as float from the value at #1 as float
-    /// and stores the result in accu register todo
+    /// and stores the result in accu register
     FMul,
 
     /// Divides the value at #1 by the value at  #2 (float division, does not floor the result)
-    /// and stores the result in accu register todo
+    /// and stores the result in accu register
     FDiv,
 
 
-    /// Does boolean (the value at #1 **AND** the value at #2) and stores the result in accu register todo
+    /// Does boolean (the value at #1 **AND** the value at #2) and stores the result in accu register
     And,
 
-    /// Does boolean (the value at #1 **OR** the value at #2) and stores the result in accu register todo
+    /// Does boolean (the value at #1 **OR** the value at #2) and stores the result in accu register
     Or,
 
-    /// Does boolean (the value at #1 **XOR** the value at #2) and stores the result in accu register todo
+    /// Does boolean (the value at #1 **XOR** the value at #2) and stores the result in accu register
     Xor,
 
-    /// Does boolean (**NOT** the value at #1) and stores the result in accu register todo
-    LogicalNot,
+    /// Does boolean (**NOT** the value at #1) and stores the result in accu register
+    Not,
 
 
-    /// Shifts the value at #1 left by `n` positions and stores the result in accu register todo
+    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
+    BitwiseAnd,
+
+    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
+    BitwiseOr,
+
+    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
+    BitwiseXor,
+
+    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
+    BitwiseNot,
+
+    /// Shifts the value at #1 left by `n` positions and stores the result in accu register
     Shl,
 
-    /// Shifts the value at #1 right by `n` positions and stores the result in accu register todo
+    /// Shifts the value at #1 right by `n` positions and stores the result in accu register
     Shr,
-
-    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register todo
-    BitwiseNot,
 
 
     /// Jumps to the specified **memory address** (_'jumps'_ means the next instruction will be
@@ -101,8 +104,6 @@ impl CPUInstr {
 
         SET,
 
-        INC,
-        DEC,
         ADD,
         SUB,
         MUL,
@@ -117,11 +118,15 @@ impl CPUInstr {
         AND,
         OR,
         XOR,
-        LOGICAL_NOT,
+        NOT,
+
+        BITWISE_AND,
+        BITWISE_OR,
+        BITWISE_XOR,
+        BITWISE_NOT,
 
         SHL,
         SHR,
-        BITWISE_NOT,
 
         JUMP,
         JUMP_IF,
@@ -136,8 +141,6 @@ impl CPUInstr {
         match &self {
             CPUInstr::Halt => Self::HALT,
             CPUInstr::Set => Self::SET,
-            CPUInstr::Inc => Self::INC,
-            CPUInstr::Dec => Self::DEC,
             CPUInstr::Add => Self::ADD,
             CPUInstr::Sub => Self::SUB,
             CPUInstr::Mul => Self::MUL,
@@ -150,10 +153,13 @@ impl CPUInstr {
             CPUInstr::And => Self::F_ADD,
             CPUInstr::Or => Self::OR,
             CPUInstr::Xor => Self::XOR,
-            CPUInstr::LogicalNot => Self::LOGICAL_NOT,
+            CPUInstr::Not => Self::NOT,
+            CPUInstr::BitwiseAnd => Self::BITWISE_AND,
+            CPUInstr::BitwiseOr => Self::BITWISE_OR,
+            CPUInstr::BitwiseXor => Self::BITWISE_XOR,
+            CPUInstr::BitwiseNot => Self::BITWISE_NOT,
             CPUInstr::Shl => Self::SHL,
             CPUInstr::Shr => Self::SHR,
-            CPUInstr::BitwiseNot => Self::BITWISE_NOT,
             CPUInstr::Jump => Self::JUMP,
             CPUInstr::JumpIf => Self::JUMP_IF,
             CPUInstr::JumpIfNot => Self::JUMP_IF_NOT,
@@ -168,8 +174,6 @@ impl CPUInstr {
         match byte {
             Self::HALT => Ok(CPUInstr::Halt),
             Self::SET => Ok(CPUInstr::Set),
-            Self::INC => Ok(CPUInstr::Inc),
-            Self::DEC => Ok(CPUInstr::Dec),
             Self::ADD => Ok(CPUInstr::Add),
             Self::SUB => Ok(CPUInstr::Sub),
             Self::MUL => Ok(CPUInstr::Mul),
@@ -179,13 +183,16 @@ impl CPUInstr {
             Self::F_SUB => Ok(CPUInstr::FSub),
             Self::F_MUL => Ok(CPUInstr::FMul),
             Self::F_DIV => Ok(CPUInstr::FDiv),
-            Self::F_ADD => Ok(CPUInstr::And),
+            Self::AND => Ok(CPUInstr::And),
             Self::OR => Ok(CPUInstr::Or),
             Self::XOR => Ok(CPUInstr::Xor),
-            Self::LOGICAL_NOT => Ok(CPUInstr::LogicalNot),
+            Self::NOT => Ok(CPUInstr::Not),
+            Self::BITWISE_AND => Ok(CPUInstr::BitwiseAnd),
+            Self::BITWISE_OR => Ok(CPUInstr::BitwiseOr),
+            Self::BITWISE_XOR => Ok(CPUInstr::BitwiseXor),
+            Self::BITWISE_NOT => Ok(CPUInstr::BitwiseNot),
             Self::SHL => Ok(CPUInstr::Shl),
             Self::SHR => Ok(CPUInstr::Shr),
-            Self::BITWISE_NOT => Ok(CPUInstr::BitwiseNot),
             Self::JUMP => Ok(CPUInstr::Jump),
             Self::JUMP_IF => Ok(CPUInstr::JumpIf),
             Self::JUMP_IF_NOT => Ok(CPUInstr::JumpIfNot),
@@ -390,8 +397,6 @@ impl CPU {
         let res = match self.instr_reg {
             CPUInstr::Halt => self.execute_halt(),
             CPUInstr::Set => self.execute_set(),
-            CPUInstr::Inc => self.execute_inc(),
-            CPUInstr::Dec => self.execute_dec(),
             CPUInstr::Add => self.execute_add(),
             CPUInstr::Sub => self.execute_sub(),
             CPUInstr::Mul => self.execute_mul(),
@@ -404,10 +409,13 @@ impl CPU {
             CPUInstr::And => self.execute_and(),
             CPUInstr::Or => self.execute_or(),
             CPUInstr::Xor => self.execute_xor(),
-            CPUInstr::LogicalNot => self.execute_l_not(),
+            CPUInstr::Not => self.execute_not(),
+            CPUInstr::BitwiseAnd => self.execute_b_and(),
+            CPUInstr::BitwiseOr => self.execute_b_or(),
+            CPUInstr::BitwiseXor => self.execute_b_xor(),
+            CPUInstr::BitwiseNot => self.execute_b_not(),
             CPUInstr::Shl => self.execute_shl(),
             CPUInstr::Shr => self.execute_shr(),
-            CPUInstr::BitwiseNot => self.execute_b_not(),
             CPUInstr::Jump => self.execute_jump(),
             CPUInstr::JumpIf => self.execute_jump_if(),
             CPUInstr::JumpIfNot => self.execute_jump_if_not(),
@@ -424,7 +432,7 @@ impl CPU {
     fn inc_instruction_counter(&mut self) {
         self.instruction_counter += 1;
         self.print();
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(2000));
     }
 }
 
@@ -474,30 +482,28 @@ impl CPU {
         }
     }
 
-    /// Inc instruction
-    fn execute_inc(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
-
-    /// Dec instruction
-    fn execute_dec(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
-
     /// Add instruction
     fn execute_add(&mut self) -> Result<(), ErrorType> {
-        self.binary_operation(|x, y| x.overflowing_add(y))
+        self.execute_bin_operator(|x, y| x.overflowing_add(y))
     }
 
     /// Sub instruction
     fn execute_sub(&mut self) -> Result<(), ErrorType> {
-        self.binary_operation(|x, y| x.overflowing_sub(y))
+        self.execute_bin_operator(|x, y| x.overflowing_sub(y))
     }
 
     /// Mul instruction
     fn execute_mul(&mut self) -> Result<(), ErrorType> {
-        self.binary_operation(|x, y| x.overflowing_mul(y))
+        self.execute_bin_operator(|x, y| x.overflowing_mul(y))
     }
 
-    fn execute_mod(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_mod(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| (x % y, false)) // Modulo does not overflow
+    }
 
-    fn execute_div(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_div(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| x.overflowing_div(y))
+    }
 
     fn execute_fadd(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
 
@@ -507,24 +513,52 @@ impl CPU {
 
     fn execute_fdiv(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
 
-    fn execute_and(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_and(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_log_operator(|x, y| (x != 0) && (y != 0))
+    }
 
-    fn execute_or(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_or(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_log_operator(|x, y| (x != 0) || (y != 0))
+    }
 
-    fn execute_xor(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_xor(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_log_operator(|x, y| (x != 0) ^ (y != 0))
+    }
 
-    fn execute_l_not(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_not(&mut self) -> Result<(), ErrorType> {
+        self.execute_un_log_operator(|x| !(x != 0))
+    }
 
-    fn execute_shl(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_b_and(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| (x.bitand(y), false))
+    }
 
-    fn execute_shr(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_b_or(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| (x.bitor(y), false))
+    }
 
-    fn execute_b_not(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    fn execute_b_xor(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| (x.bitxor(y), false))
+    }
+
+    fn execute_b_not(&mut self) -> Result<(), ErrorType> {
+        self.execute_un_operator(|x| !x)
+    }
+
+    fn execute_shl(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| x.overflowing_shl(y as u32))
+    }
+
+    fn execute_shr(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_operator(|x, y| x.overflowing_shr(y as u32))
+    }
 
     /// Jump instruction
     fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let mut pc = self.prog_counter.unwrap();
+        let pc = self.prog_counter.unwrap();
+        println!("Reading mem address from {pc:?}");
         let addr = self.fetch_mem_addr(pc)?;
+        println!("Jumping to {addr:?}");
         self.set_program_counter(addr);
         Ok(())
     }
@@ -543,15 +577,14 @@ impl CPU {
 
 /** General helper methods for CPU instructions */
 impl CPU {
-    /// Executes a binary operator. \
+    /// Executes a binary operator. (operator with two arguments) \
     /// Accepts only overflowing operator which return `(RegType, bool)`. Second parameter is `true`
     /// if the operator overflowed
     /// - Assigns the Accumulator register to the result of the operation
     /// - Sets the `Overflow` flag if the operation overflows.
     /// - Sets the `Zero` flag if the result  is zero.
     /// - Sets the `Sign` flag if the result is negative.
-    fn binary_operation<F>(&mut self, op: F)
-        -> Result<(), ErrorType>
+    fn execute_bin_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
     where
         F: Fn(RegType, RegType) -> (RegType, bool),
     {
@@ -562,9 +595,7 @@ impl CPU {
 
         // Reset the flags before setting them so that they represent the result
         // of the latest arithmetic operation
-        self.disable_flag(CPUFlag::Overflow);
-        self.disable_flag(CPUFlag::Sign);
-        self.disable_flag(CPUFlag::Zero);
+        self.reset_flags();
 
         // If the operation overflowed, set the Overflow flag
         if overflowed {
@@ -582,6 +613,93 @@ impl CPU {
         }
 
         self.set_accu_reg(result);
+
+        Ok(())
+    }
+
+    /// Executes a unary operator. (operator with one argument) \
+    ///  Accepts a function - the operation itself which returns `RegType`
+    /// - Assigns the Accumulator register to the result of the operation
+    /// - Sets the `Zero` flag if the result  is zero.
+    /// - Sets the `Sign` flag if the result is negative.
+    fn execute_un_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(RegType) -> RegType,
+    {
+        let lhs = self.read_operand_value()?;
+
+        let result = op(lhs);
+
+        // Reset the flags before setting them so that they represent the result
+        // of the latest arithmetic operation
+        self.reset_flags();
+
+        // If the result is negative, set the Sign flag
+        if result.is_negative() {
+            self.enable_flag(CPUFlag::Sign);
+        }
+
+        // If the result is zero, set the zero flag
+        if result == 0 {
+            self.enable_flag(CPUFlag::Zero);
+        }
+
+        self.set_accu_reg(result);
+
+        Ok(())
+    }
+
+    /// Executes a logical binary operator. (logical operator with two arguments) \
+    /// Accepts a function - the operation itself which returns `bool`
+    /// - Assigns the Accumulator register to the result of the operation
+    /// - Sets the `Zero` flag if the result is `false`.
+    fn execute_bin_log_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(RegType, RegType) -> bool,
+    {
+        let lhs = self.read_operand_value()?;
+        let rhs = self.read_operand_value()?;
+
+        let result = op(lhs, rhs);
+
+        // Reset the flags before setting them so that they represent the result
+        // of the latest arithmetic operation
+        self.disable_flag(CPUFlag::Overflow);
+        self.disable_flag(CPUFlag::Sign);
+        self.disable_flag(CPUFlag::Zero);
+
+        // If the result is `false`, set the Zero flag
+        if result == false {
+            self.enable_flag(CPUFlag::Zero);
+        }
+
+        self.set_accu_reg(result as RegType);
+
+        Ok(())
+    }
+
+    /// Executes a logical unary operator. (logical operator with one argument) \
+    ///  Accepts a function - the operation itself which returns `RegType`
+    /// - Assigns the Accumulator register to the result of the operation
+    /// - Sets the `Zero` flag if the result is `false`.
+    fn execute_un_log_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(RegType) -> bool,
+    {
+        let lhs = self.read_operand_value()?;
+
+        let result = op(lhs);
+
+        // Reset the flags before setting them so that they represent the result
+        // of the latest arithmetic operation
+        self.reset_flags();
+
+        // If the result is zero, set the zero flag
+        if result == false {
+            self.enable_flag(CPUFlag::Zero);
+        }
+
+        self.set_accu_reg(result as RegType);
 
         Ok(())
     }
@@ -666,7 +784,7 @@ impl CPU {
 
     /// Reads a memory address from address and returns the value at that memory address
     fn fetch_value_from_mem_addr(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
-        let mut mem_addr = self.fetch_mem_addr(addr)?;
+        let mem_addr = self.fetch_mem_addr(addr)?;
         let val = self.ram.at(mem_addr)?;
         Ok(val.0 as RegType)
     }
@@ -801,6 +919,12 @@ impl CPU {
         self.set_flag(flag, false);
     }
 
+    /// Sets all the flags to `false`
+    pub fn reset_flags(&mut self) {
+        self.disable_flag(CPUFlag::Overflow);
+        self.disable_flag(CPUFlag::Zero);
+        self.disable_flag(CPUFlag::Sign);
+    }
 }
 
 
@@ -808,10 +932,10 @@ impl CPU {
 impl CPU {
     pub fn print(&self) {
         // Clear the screen (only implemented for window)
-        std::process::Command::new("cmd")
-            .args(["/c", "cls"])
-            .status()
-            .unwrap();
+        // std::process::Command::new("cmd")
+        //     .args(["/c", "cls"])
+        //     .status()
+        //     .unwrap();
 
         println!("Instruction {}\n", self.instruction_counter);
 
@@ -826,7 +950,7 @@ impl CPU {
         }
 
         // Show the value of registers
-        for i in (0..GEN_REG_COUNT / 2) {
+        for i in 0..GEN_REG_COUNT / 2 {
             let reg1 = i;
             let reg2 = GEN_REG_COUNT / 2 + i;
             println!("Reg {}\t= {}\t\tReg {}\t= {}",

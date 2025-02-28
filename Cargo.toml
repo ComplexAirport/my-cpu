@@ -1,5 +1,5 @@
 [package]
-name = "MyKernel"
+name = "my_cpu"
 version = "0.1.0"
 edition = "2021"
 

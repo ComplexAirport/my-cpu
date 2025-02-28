@@ -90,8 +90,6 @@ impl RAM {
                 continue
             }
             if seg.size >= size {
-                let alloc_end = seg.start + size;
-
                 seg.start.inc(size);
                 seg.size -= size;
 
@@ -111,7 +109,7 @@ impl RAM {
     /// # Errors
     /// - `RAMError::OutOfMemory(size)` if there's no free segment big enough.
     pub fn allocate(&mut self, size: usize) -> Result<RamAddr, RAMError> {
-        /// Basically the same as `allocate_at` with `start` = 0
+        // Basically the same as `allocate_at` with `start` = 0
         self.allocate_at(size, RamAddr(0))
     }
 

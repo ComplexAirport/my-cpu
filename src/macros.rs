@@ -9,10 +9,11 @@
 /// pub const SUB: u8       = 2;
 /// pub const MUL: u8       = 3;
 /// pub const SET: u8       = 4;
-/// ...
+/// // ...
 /// ```
 /// We can write
 /// ```rust
+/// use my_cpu::define_opcodes;
 /// define_opcodes!(
 ///     HALT,
 ///     ADD,
@@ -20,7 +21,6 @@
 ///     MUL,
 ///     SET,
 /// );
-/// use opcodes::*;
 /// ```
 #[macro_export]
 macro_rules! define_opcodes {
