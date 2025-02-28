@@ -267,7 +267,6 @@ impl CPUFlag {
         ZERO,
         SIGN,
         OVERFLOW,
-        IMMEDIATE
     );
 
     /// Represents the flag as a byte
@@ -497,10 +496,12 @@ impl CPU {
         self.execute_bin_operator(|x, y| x.overflowing_mul(y))
     }
 
+    /// Mod instruction
     fn execute_mod(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| (x % y, false)) // Modulo does not overflow
     }
 
+    /// Div instruction
     fn execute_div(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| x.overflowing_div(y))
     }
@@ -513,42 +514,52 @@ impl CPU {
 
     fn execute_fdiv(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
 
+    /// Logical And instruction
     fn execute_and(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_log_operator(|x, y| (x != 0) && (y != 0))
     }
 
+    /// Logical Or instruction
     fn execute_or(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_log_operator(|x, y| (x != 0) || (y != 0))
     }
 
+    /// Logical Xor instruction
     fn execute_xor(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_log_operator(|x, y| (x != 0) ^ (y != 0))
     }
 
+    /// Logical Not instruction
     fn execute_not(&mut self) -> Result<(), ErrorType> {
         self.execute_un_log_operator(|x| !(x != 0))
     }
 
+    /// Bitwise And instruction
     fn execute_b_and(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| (x.bitand(y), false))
     }
 
+    /// Bitwise Or instruction
     fn execute_b_or(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| (x.bitor(y), false))
     }
 
+    /// Bitwise Xor instruction
     fn execute_b_xor(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| (x.bitxor(y), false))
     }
 
+    /// Bitwise Not instruction
     fn execute_b_not(&mut self) -> Result<(), ErrorType> {
         self.execute_un_operator(|x| !x)
     }
 
+    /// Shl (Shift Left) instruction
     fn execute_shl(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| x.overflowing_shl(y as u32))
     }
 
+    /// Shr (Shift Right) instruction
     fn execute_shr(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| x.overflowing_shr(y as u32))
     }
@@ -556,22 +567,35 @@ impl CPU {
     /// Jump instruction
     fn execute_jump(&mut self) -> Result<(), ErrorType> {
         let pc = self.prog_counter.unwrap();
-        println!("Reading mem address from {pc:?}");
         let addr = self.fetch_mem_addr(pc)?;
-        println!("Jumping to {addr:?}");
         self.set_program_counter(addr);
         Ok(())
     }
 
-    fn execute_jump_if(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    // JumpIf instruction
+    fn execute_jump_if(&mut self) -> Result<(), ErrorType> {
+        self.execute_one_arg_conditional_jump(|x| (x != 0) == true)
+    }
 
-    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    // JumpIfNot instruction
+    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> {
+        self.execute_one_arg_conditional_jump(|x| (x == 0) == true)
+    }
 
-    fn execute_jump_if_greater(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    // JumpIfGreater instruction
+    fn execute_jump_if_greater(&mut self) -> Result<(), ErrorType> {
+        self.execute_two_arg_conditional_jump(|x, y| x > y)
+    }
 
-    fn execute_jump_if_less(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    // JumpIfLess instruction
+    fn execute_jump_if_less(&mut self) -> Result<(), ErrorType> {
+        self.execute_two_arg_conditional_jump(|x, y| x < y)
+    }
 
-    fn execute_jump_if_equal(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    // JumpIfEqual instruction
+    fn execute_jump_if_equal(&mut self) -> Result<(), ErrorType> {
+        self.execute_two_arg_conditional_jump(|x, y| x == y)
+    }
 }
 
 
@@ -700,6 +724,42 @@ impl CPU {
         }
 
         self.set_accu_reg(result as RegType);
+
+        Ok(())
+    }
+
+
+    /// Jump if the argument function which takes one argument and returns `bool` \
+    /// returns `true`
+    fn execute_one_arg_conditional_jump<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(RegType) -> bool,
+    {
+        let pc = self.prog_counter.unwrap();
+        let value = self.read_operand_value()?;
+        let addr = self.fetch_mem_addr(pc)?;
+
+        if op(value) {
+            self.set_program_counter(addr);
+        }
+
+        Ok(())
+    }
+
+    /// Jump if the argument function which takes two arguments and returns `bool` \
+    /// returns `true`
+    fn execute_two_arg_conditional_jump<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(RegType, RegType) -> bool,
+    {
+        let pc = self.prog_counter.unwrap();
+        let value1 = self.read_operand_value()?;
+        let value2 = self.read_operand_value()?;
+        let addr = self.fetch_mem_addr(pc)?;
+
+        if op(value1, value2) {
+            self.set_program_counter(addr);
+        }
 
         Ok(())
     }
