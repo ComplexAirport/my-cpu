@@ -1,5 +1,4 @@
 use std::ops::{Add, Sub};
-
 pub use crate::error::RAMError;
 
 
@@ -9,14 +8,43 @@ pub use crate::error::RAMError;
 pub struct RamAddr(pub usize);
 
 impl RamAddr {
-    /// In-place addition
-    pub fn inc(&mut self, rhs: impl Into<usize>) {
-        self.0 += rhs.into()
+    /// Overflow-safe addition
+    pub fn add(&self, rhs: usize) -> Result<Self, RAMError> {
+        Ok(Self(
+            self.0.checked_add(rhs).ok_or_else(||
+                RAMError::AddrAddError(*self, rhs))?
+        ))
     }
 
-    /// In-place subtraction
-    pub fn dec(&mut self, rhs: impl Into<usize>) {
-        self.0 -= rhs.into()
+    /// Overflow-safe subtraction
+    pub fn sub(&self, rhs: usize) -> Result<Self, RAMError> {
+        Ok(Self(
+            self.0.checked_sub(rhs).ok_or_else(||
+                RAMError::AddrSubError(*self, rhs))?
+        ))
+    }
+
+    /// Increment the address (overflow safe)
+    pub fn inc(&mut self, rhs: usize) -> Result<(), RAMError> {
+        self.0 = self.0.checked_add(rhs)
+            .ok_or_else(|| RAMError::AddrAddError(*self, rhs))?;
+        Ok(())
+    }
+
+    /// Decrement the address (overflow safe)
+    pub fn dec(&mut self, rhs: usize) -> Result<(), RAMError> {
+        self.0 = self.0.checked_sub(rhs)
+            .ok_or_else(|| RAMError::AddrSubError(*self, rhs))?;
+        Ok(())
+    }
+
+    /// Calculates the absolute value of distance between two RAM addresses
+    pub fn distance(&self, rhs: Self) -> usize {
+        if rhs.0 > self.0 {
+            rhs.0 - self.0
+        } else {
+            self.0 - rhs.0
+        }
     }
 }
 
@@ -42,6 +70,12 @@ impl RamUnit {
 struct FreeSegment {
     start: RamAddr,
     size: usize,
+}
+
+impl FreeSegment {
+    pub fn end(&self) -> RamAddr {
+        self.start.add(self.size).unwrap()
+    }
 }
 
 
@@ -77,32 +111,94 @@ impl RAM {
     /// and returns the starting address. In other words, tries to allocate `size` bytes in the
     /// **specified range** - **[`start`; )**
     /// # Errors
-    /// - `RAMError::OutOfMemory(size)` if there's no free segment big enough.
+    /// - [`RAMError::AllocatingZero`] if tried to allocate 0
+    /// - [`RamError:NotEnoughMemory`] if not enough memory for this allocation
     pub fn allocate_at(&mut self, size: usize, start: RamAddr) -> Result<RamAddr, RAMError> {
         // Usually when 0 bytes try to be allocated, an error happened somewhere
         if size == 0 {
-            return Err(RAMError::OutOfMemory(size));
+            return Err(RAMError::AllocatingZero);
+        } else if self.free_size() < size {
+            return Err(RAMError::NotEnoughMemory(size, start))
         }
 
-        for (i, seg) in self.free_segments.iter_mut().enumerate() {
-            let alloc_start = seg.start;
-            if alloc_start < start {
-                continue
-            }
-            if seg.size >= size {
-                seg.start.inc(size);
-                seg.size -= size;
+        for i in 0..self.free_segments.len() {
+            let seg_start = self.free_segments[i].start;
+            let seg_size = self.free_segments[i].size;
+            let seg_end = self.free_segments[i].end();
 
-                if seg.size == 0 {
-                    self.free_segments.remove(i);
+            // Find how much space can be used in this segment
+            let usable_size = if start < seg_start {
+                // If segment starts after `start` the usable space is the segment itself
+                seg_size
+            } else {
+                // If segment starts before `start`, there is less usable space
+                seg_size - start.distance(seg_start)
+            };
+
+            if usable_size < size {
+                continue;
+            }
+
+            // If we reached here, the segment has enough space to hold the data
+
+            if seg_start > start {
+                // 
+                /*
+                The data will be allocated in [`seg.start`; `seg.start + size`) region
+                
+                seg_start                  (partition)                           seg_end
+                    |...........................|...................................|
+                    ^......allocated data.......^
+                  start                   start + size
+                */
+
+                // "Cut" the segment's front part (our data)
+                self.free_segments[i].start.inc(size)?;
+                self.free_segments[i].size -= size;
+
+                if seg_size == 0 {
+                    self.merge_adjacent_segments();
                 }
 
-                return Ok(alloc_start);
+                return Ok(seg_start);
+            }
+            else {
+                /*
+                Data will be allocated in [`start`; `start + size`) region (which fits in this segment)
+                This means that the segment would be partitioned
+                
+                seg_start   (partition)                 (partition)              seg_end
+                    |...........|...........................|.......................|
+                                ^......allocated data.......^
+                              start                   start + size
+                */
+
+                // First new segment is [`seg_start`; `start`);
+                let new_seg_1_start = seg_start;
+                let new_seg_1_size = start.distance(new_seg_1_start);
+
+                // Second new segment is [`start + size`; seg_end);
+                let new_seg_2_start = start.add(size)?;
+                let new_seg_2_size = seg_end.distance(new_seg_2_start);
+
+                self.free_segments.remove(i);
+
+                self.free_segments.push(FreeSegment {
+                    start: new_seg_1_start,
+                    size: new_seg_1_size
+                });
+
+                self.free_segments.push(FreeSegment {
+                    start: new_seg_2_start,
+                    size: new_seg_2_size
+                });
+
+                return Ok(start);
             }
         }
 
         // No segment could accommodate `size`
-        Err(RAMError::OutOfMemory(size))
+        Err(RAMError::NotEnoughMemory(size, start))
     }
 
     /// Allocates a contiguous block of `size` bytes and returns the starting address.
@@ -162,11 +258,11 @@ impl RAM {
         while i < self.free_segments.len() - 1 {
             let curr_start = self.free_segments[i].start;
             let curr_size = self.free_segments[i].size;
-            let curr_end = curr_start + curr_size;
+            let curr_end = curr_start.add(curr_size).unwrap(); // Cannot panic since it is already in free segments
 
             let next_start = self.free_segments[i + 1].start;
             let next_size = self.free_segments[i + 1].size;
-            let next_end = next_start + next_size;
+            let next_end = next_start.add(next_size).unwrap(); // Cannot panic since it is already in free segments
 
             if next_start <= curr_end {
                 // They overlap or are adjacent; merge them
@@ -203,10 +299,9 @@ impl RAM {
     /// Checks if a given range `[addr .. addr + size)` is fully free.
     pub fn is_free(&self, addr: RamAddr, size: usize) -> bool {
         let start = addr;
-        let end = match start.0.checked_add(size) {
-            Some(e) => RamAddr(e),
-            None => return false,
-        };
+        let end = start.add(size);
+        if end.is_err() { return false; }
+        let end = end.unwrap();
         if end.0 > self.mem.len() {
             return false;
         }
@@ -217,7 +312,7 @@ impl RAM {
         let mut current = start;
 
         for seg in &self.free_segments {
-            if seg.start + seg.size < current {
+            if seg.start.add(seg.size).unwrap() < current {
                 // Segment is before [current..end)
                 continue;
             }
@@ -227,15 +322,15 @@ impl RAM {
             }
 
             // If we reached here, seg.start <= current
-            let segment_end = seg.start + seg.size;
+            let segment_end = seg.start.add(seg.size).unwrap();
             if segment_end >= end {
                 // Entire range is covered
                 return true;
             }
             // Partial coverage, move current up
             if segment_end > current {
-                let covered = segment_end.0 - current.0;
-                remaining = remaining.saturating_sub(covered);
+                let covered = segment_end.sub(current.0).unwrap();
+                remaining = remaining.saturating_sub(covered.0);
                 current = segment_end;
             }
             if remaining == 0 {
@@ -288,7 +383,7 @@ impl RAM {
     /// Read bytes from the memory
     fn read_bytes(&self, start: RamAddr, size: usize) -> Result<Vec<u8>, RAMError> {
         if !self.is_free(start, size) {
-            let slice: Vec<u8> = self.mem[(start.0)..(start.0+size)]
+            let slice: Vec<u8> = self.mem[start.0..(start.0+size)]
                 .iter()
                 .map(|i| i.0)
                 .collect();
@@ -387,35 +482,10 @@ impl RAM {
 }
 
 
-
-/** Operator Trait Implementations for [`RamAddr`] */
-impl<T: Into<usize>> Add<T> for RamAddr {
-    type Output = RamAddr;
-
-    fn add(self, rhs: T) -> Self::Output {
-        RamAddr(self.0 + rhs.into())
-    }
-}
-
-impl<T: Into<usize>> Sub<T> for RamAddr {
-    type Output = RamAddr;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        RamAddr(self.0 - rhs.into())
-    }
-}
-
-
 /** Conversions & Formatting */
 impl<T: Into<usize>> From<T> for RamAddr {
     fn from(value: T) -> Self {
         RamAddr(value.into())
-    }
-}
-
-impl AsRef<RamAddr> for RamAddr {
-    fn as_ref(&self) -> &RamAddr {
-        self
     }
 }
 

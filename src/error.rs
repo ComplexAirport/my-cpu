@@ -14,11 +14,6 @@ pub enum ErrorType {
 /// Represents errors related to our RAM (Random Access Memory)
 #[derive(Debug, Error)]
 pub enum RAMError {
-    /// Not enough contiguous free space to allocate.
-    /// Accepts the amount of bytes that was requested to allocate.
-    #[error("Not enough memory to allocate {0} bytes.")]
-    OutOfMemory(usize),
-
     /// Attempted to free a segment that goes out of bounds or overlaps illegally.
     /// Accepts the start address and size of the region that was requested to be freed.
     #[error("Invalid free operation of size {1} at start address {0:?}")]
@@ -33,6 +28,24 @@ pub enum RAMError {
     /// Accepts the start address and size of the region that was tried to be read.
     #[error("Invalid read operation of size {1} at start address {0:?}")]
     InvalidRead(RamAddr, usize),
+
+
+    /// Attempted to do an addition on memory address which lead to overflow
+    #[error("Address {0:?} overflowed when increased by {1}")]
+    AddrAddError(RamAddr, usize),
+
+    /// Attempted to subtract from memory address which lead to overflow
+    #[error("Failed to subtract {1} from {0:?} (getting negative address)")]
+    AddrSubError(RamAddr, usize),
+    
+    /// Attempted to allocate `0` bytes
+    #[error("Tried to allocate zero bytes")]
+    AllocatingZero,
+
+    
+    /// Not enough memory to allocate bytes (allocation starting from specified address)
+    #[error("Not enough in RAM region [{1:?}; [end]) to allocate {0} bytes.")]
+    NotEnoughMemory(usize, RamAddr),
 }
 
 /// Represents errors related to our CPU
