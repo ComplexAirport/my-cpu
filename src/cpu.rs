@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::ops::{BitAnd, BitOr, BitXor};
 use crate::define_opcodes;
 pub use crate::ram::{RamAddr, RamUnit, RAM};
@@ -78,23 +77,23 @@ pub enum CPUInstr {
     Shr,
 
 
-    /// Jumps to the specified **memory address** (_'jumps'_ means the next instruction will be
+    /// Jumps to the specified **memory address** #1 (_'jumps'_ means the next instruction will be
     /// the byte at the specified memory address)
     Jump,
 
-    /// Jumps to the specified memory address (#1) if the value at #2 is non-zero
+    /// Jumps to the specified memory address (#2) if the value at #1 is non-zero
     JumpIf,
 
-    /// Jumps to the specified memory address (#1) if the value at #2 is zero
+    /// Jumps to the specified memory address (#2) if the value at #1 is zero
     JumpIfNot,
 
-    /// Jumps to the specified memory address (#1) if the value at #2 is greater than the value at #3
+    /// Jumps to the specified memory address (#3) if the value at #1 is greater than the value at #2
     JumpIfGreater,
 
-    /// Jumps to the specified memory address (#1) if the value at #2 is less than the value at #3
+    /// Jumps to the specified memory address (#3) if the value at #1 is less than the value at #2
     JumpIfLess,
 
-    /// Jumps to the specified memory address (#1) if the value at #2 is equal to the value at #3
+    /// Jumps to the specified memory address (#3) if the value at #1 is equal to the value at #2
     JumpIfEqual
 }
 
@@ -296,6 +295,9 @@ pub const GEN_REG_COUNT: usize = 8;
 /// Represents the type of the general registers
 pub type RegType = i64;
 
+/// Represents the type of the immediate value
+pub type ImmType = RegType;
+
 /// Represents the address of the first instruction for the CPU
 pub const CPU_START_ADDR: RamAddr = RamAddr(0x0_usize);
 
@@ -319,7 +321,6 @@ pub const IMMEDIATE_VALUE_SIZE: usize = 8;
 
 
 /// Represents the CPU itself
-///
 pub struct CPU {
     pub ram: RAM,
 
@@ -390,7 +391,7 @@ impl CPU {
         self.instr_reg = CPUInstr::from_byte(instr_byte.0)?;
 
         // Increment the program counter
-        pc.inc(INSTRUCTION_SIZE);
+        pc.inc(INSTRUCTION_SIZE)?;
         self.set_program_counter(pc);
 
         let res = match self.instr_reg {
@@ -453,7 +454,7 @@ impl CPU {
         match to_set_type {
             OperandType::MemoryAddress => {
                 let to_set = self.fetch_mem_addr(pc)?;
-                pc.inc(MEMORY_ADDRESS_SIZE);
+                pc.inc(MEMORY_ADDRESS_SIZE)?;
                 self.set_program_counter(pc);
                 let value = self.read_operand_value()? as u8;
                 self.ram.write_byte(to_set, value)?;
@@ -461,7 +462,7 @@ impl CPU {
             }
             OperandType::Register => {
                 let to_set = self.fetch_reg_number(pc)?;
-                pc.inc(REGISTER_SIZE);
+                pc.inc(REGISTER_SIZE)?;
                 self.set_program_counter(pc);
                 let value = self.read_operand_value()?;
                 self.set_reg(to_set, value)?;
@@ -469,7 +470,7 @@ impl CPU {
             }
             OperandType::Flag => {
                 let to_set = self.fetch_flag_number(pc)?;
-                pc.inc(FLAG_TYPE_SIZE);
+                pc.inc(FLAG_TYPE_SIZE)?;
                 self.set_program_counter(pc);
                 let value = self.read_operand_value()? != 0;
                 self.set_flag(CPUFlag::from_byte(to_set)?, value);
@@ -566,8 +567,8 @@ impl CPU {
 
     /// Jump instruction
     fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let pc = self.prog_counter.unwrap();
-        let addr = self.fetch_mem_addr(pc)?;
+        let _ = self.read_operand_type()?; // Read but omit the byte indicating memory address
+        let addr = self.fetch_mem_addr(self.prog_counter.unwrap())?;
         self.set_program_counter(addr);
         Ok(())
     }
@@ -735,12 +736,18 @@ impl CPU {
     where
         F: Fn(RegType) -> bool,
     {
-        let pc = self.prog_counter.unwrap();
         let value = self.read_operand_value()?;
+        let _ = self.read_operand_type()?; // Read but omit the byte indicating memory address
+
+        let mut pc = self.prog_counter.unwrap();
+
         let addr = self.fetch_mem_addr(pc)?;
+        pc.inc(MEMORY_ADDRESS_SIZE)?;
 
         if op(value) {
             self.set_program_counter(addr);
+        } else {
+            self.set_program_counter(pc)
         }
 
         Ok(())
@@ -752,13 +759,19 @@ impl CPU {
     where
         F: Fn(RegType, RegType) -> bool,
     {
-        let pc = self.prog_counter.unwrap();
         let value1 = self.read_operand_value()?;
         let value2 = self.read_operand_value()?;
-        let addr = self.fetch_mem_addr(pc)?;
+        let _ = self.read_operand_type()?; // Read but omit the byte indicating memory address
+
+        let mut pc = self.prog_counter.unwrap();
+        let addr = self.fetch_mem_addr(self.prog_counter.unwrap())?;
+
+        pc.inc(MEMORY_ADDRESS_SIZE)?;
 
         if op(value1, value2) {
             self.set_program_counter(addr);
+        } else {
+            self.set_program_counter(pc);
         }
 
         Ok(())
@@ -771,42 +784,42 @@ impl CPU {
     /// This method gets the value from the operand. It
     /// 1. Retrieves the operand type
     /// 2. Based on what operand type is given to it, it reads the underlying value
-    /// For example, if the operand type is `OperandType::MemoryAddress`, it will read the byte
+    /// For example, if the operand type is [`OperandType::MemoryAddress`], it will read the byte
     /// at that memory address and return it. \
-    /// - The return data is represented in `RegType`
+    /// - The return data is represented in [`ImmType`]
     /// - Automatically increments the program counter.
-    fn read_operand_value(&mut self) -> Result<RegType, ErrorType> {
+    fn read_operand_value(&mut self) -> Result<ImmType, ErrorType> {
         let operand = self.read_operand_type()?;
         let mut pc = self.prog_counter.unwrap();
         match operand {
             OperandType::MemoryAddress => {
                 let value = self.fetch_value_from_mem_addr(pc)?;
-                pc.inc(MEMORY_ADDRESS_SIZE);
+                pc.inc(MEMORY_ADDRESS_SIZE)?;
                 self.set_program_counter(pc);
                 Ok(value)
             }
             OperandType::Register => {
                 let value = self.fetch_value_from_reg(pc)?;
-                pc.inc(REGISTER_SIZE);
+                pc.inc(REGISTER_SIZE)?;
                 self.set_program_counter(pc);
                 Ok(value)
             }
             OperandType::Flag => {
                 let value = self.fetch_value_from_flag(pc)?.as_byte() as RegType;
-                pc.inc(FLAG_TYPE_SIZE);
+                pc.inc(FLAG_TYPE_SIZE)?;
                 self.set_program_counter(pc);
                 Ok(value)
             }
             OperandType::Immediate => {
                 let value = self.fetch_imm(pc)?;
-                pc.inc(IMMEDIATE_VALUE_SIZE);
+                pc.inc(IMMEDIATE_VALUE_SIZE)?;
                 self.set_program_counter(pc);
                 Ok(value)
             }
         }
     }
 
-    /// Fetches the operand type byte returns the `OperandType` enum wrapper of it \
+    /// Fetches the operand type byte returns the [`OperandType`] enum wrapper of it \
     /// Automatically increments the program counter
     fn read_operand_type(&mut self) -> Result<OperandType, ErrorType> {
         // The program counter is guaranteed not to be `None`, so we can unwrap it
@@ -819,7 +832,7 @@ impl CPU {
         let operand_type = OperandType::from_byte(operand_type_byte)?;
 
         // Increment the program counter
-        pc.inc(OPERAND_TYPE_SIZE);
+        pc.inc(OPERAND_TYPE_SIZE)?;
 
         self.set_program_counter(pc);
 
@@ -833,7 +846,7 @@ impl CPU {
     }
 
     /// Gets the register number from the address and returns the value at that register
-    fn fetch_value_from_reg(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
+    fn fetch_value_from_reg(&self, addr: RamAddr) -> Result<ImmType, ErrorType> {
         let reg_number: usize = self.fetch_reg_number(addr)?;
         if reg_number == GEN_REG_COUNT { // The 9-th register is the accumulator register
             Ok(self.get_accu_reg())
@@ -849,14 +862,14 @@ impl CPU {
         Ok(val.0 as RegType)
     }
 
-    /// Reads a flag number from the address and returns a `CPUFlag` based on it
+    /// Reads a flag number from the address and returns a [`CPUFlag`] based on it
     fn fetch_value_from_flag(&self, addr: RamAddr) -> Result<CPUFlag, ErrorType> {
         let flag_number = self.fetch_flag_number(addr)?;
         Ok(CPUFlag::from_byte(flag_number)?)
     }
 
-    /// Reads an immediate value and returns it as `RegType`
-    fn fetch_imm(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
+    /// Reads an immediate value and returns it as [`ImmType`]
+    fn fetch_imm(&self, addr: RamAddr) -> Result<ImmType, ErrorType> {
         let value = self.ram.read_i64(addr)?;
         Ok(value)
     }
@@ -903,7 +916,7 @@ impl CPU {
     /// Increments program counter by a value
     pub fn inc_prog_counter(&mut self, val: usize) {
         if let Some(counter) = &mut self.prog_counter {
-            counter.inc(val);
+            let _ = counter.inc(val); // TODO: use the Result
         } else {
             panic!("Attempt to increment program counter in a halted state")
         }
@@ -988,14 +1001,14 @@ impl CPU {
 }
 
 
-/** Prints the cpu state. Only for debugging purposes */
+/** Prints the cpu state. NOTE: Only for debugging purposes */
 impl CPU {
     pub fn print(&self) {
         // Clear the screen (only implemented for window)
-        // std::process::Command::new("cmd")
-        //     .args(["/c", "cls"])
-        //     .status()
-        //     .unwrap();
+        std::process::Command::new("cmd")
+            .args(["/c", "cls"])
+            .status()
+            .unwrap();
 
         println!("Instruction {}\n", self.instruction_counter);
 
