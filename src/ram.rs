@@ -114,90 +114,68 @@ impl RAM {
     /// - [`RAMError::AllocatingZero`] if tried to allocate 0
     /// - [`RamError:NotEnoughMemory`] if not enough memory for this allocation
     pub fn allocate_at(&mut self, size: usize, start: RamAddr) -> Result<RamAddr, RAMError> {
-        // Usually when 0 bytes try to be allocated, an error happened somewhere
         if size == 0 {
+            // Usually when 0 bytes try to be allocated, it's an error somewhere
             return Err(RAMError::AllocatingZero);
-        } else if self.free_size() < size {
-            return Err(RAMError::NotEnoughMemory(size, start))
         }
 
-        for i in 0..self.free_segments.len() {
-            let seg_start = self.free_segments[i].start;
-            let seg_size = self.free_segments[i].size;
-            let seg_end = self.free_segments[i].end();
+        // Quickly check if the total free size is less than `size`.
+        if self.free_size() < size {
+            return Err(RAMError::NotEnoughMemory(size, start));
+        }
 
-            // Find how much space can be used in this segment
-            let usable_size = if start < seg_start {
-                // If segment starts after `start` the usable space is the segment itself
-                seg_size
-            } else {
-                // If segment starts before `start`, there is less usable space
-                seg_size - start.distance(seg_start)
-            };
+        // Iterate over free segments
+        let mut i = 0;
+        while i < self.free_segments.len() {
+            let seg = &mut self.free_segments[i];
+            let seg_start = seg.start;
+            let seg_end   = seg.end(); // seg_start + seg.size
 
-            if usable_size < size {
-                continue;
-            }
+            // The earliest point we can allocate in this segment
+            let alloc_start = seg_start.max(start);
 
-            // If we reached here, the segment has enough space to hold the data
-
-            if seg_start > start {
-                // 
-                /*
-                The data will be allocated in [`seg.start`; `seg.start + size`) region
+            // Check if we can fit `size` bytes from `alloc_start`
+            // i.e. does [alloc_start, alloc_start + size) fit within [seg_start, seg_end) ?
+            if alloc_start.add(size)? <= seg_end {
+                // We’ve found a segment that fits the request.
+                // Before and after the allocated region, the memory remains free.
+                // That means we potentially split into two remainder segments:
+                //
+                //   [seg_start ... alloc_start)  -- front remainder
+                //   [alloc_start ... alloc_start+size) -- allocated area
+                //   [alloc_start+size ... seg_end)  -- back remainder
+                let front_size = alloc_start.distance(seg_start);
+                let back_start = alloc_start.add(size)?;
+                let back_size  = seg_end.distance(back_start);
                 
-                seg_start                  (partition)                           seg_end
-                    |...........................|...................................|
-                    ^......allocated data.......^
-                  start                   start + size
-                */
-
-                // "Cut" the segment's front part (our data)
-                self.free_segments[i].start.inc(size)?;
-                self.free_segments[i].size -= size;
-
-                if seg_size == 0 {
-                    self.merge_adjacent_segments();
-                }
-
-                return Ok(seg_start);
-            }
-            else {
-                /*
-                Data will be allocated in [`start`; `start + size`) region (which fits in this segment)
-                This means that the segment would be partitioned
-                
-                seg_start   (partition)                 (partition)              seg_end
-                    |...........|...........................|.......................|
-                                ^......allocated data.......^
-                              start                   start + size
-                */
-
-                // First new segment is [`seg_start`; `start`);
-                let new_seg_1_start = seg_start;
-                let new_seg_1_size = start.distance(new_seg_1_start);
-
-                // Second new segment is [`start + size`; seg_end);
-                let new_seg_2_start = start.add(size)?;
-                let new_seg_2_size = seg_end.distance(new_seg_2_start);
-
                 self.free_segments.remove(i);
 
-                self.free_segments.push(FreeSegment {
-                    start: new_seg_1_start,
-                    size: new_seg_1_size
-                });
+                // If there is a front remainder, push it.
+                if front_size > 0 {
+                    self.free_segments.push(FreeSegment {
+                        start: seg_start,
+                        size: front_size,
+                    });
+                }
 
-                self.free_segments.push(FreeSegment {
-                    start: new_seg_2_start,
-                    size: new_seg_2_size
-                });
+                // If there is a back remainder, push it.
+                if back_size > 0 {
+                    self.free_segments.push(FreeSegment {
+                        start: back_start,
+                        size: back_size,
+                    });
+                }
+                
+                self.merge_adjacent_segments();
 
-                return Ok(start);
+                return Ok(alloc_start);
             }
+
+            // Otherwise, this segment doesn’t have enough capacity at/after `start`.
+            i += 1;
         }
 
-        // No segment could accommodate `size`
+        // If we reach here, there was no suitable segment.
         Err(RAMError::NotEnoughMemory(size, start))
     }
 
