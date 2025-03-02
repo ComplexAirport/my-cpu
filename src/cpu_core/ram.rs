@@ -1,4 +1,4 @@
-pub use crate::error::RAMError;
+pub use super::error::RAMError;
 
 
 /// Stores a RAM address. \

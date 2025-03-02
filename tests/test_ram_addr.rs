@@ -1,4 +1,4 @@
-use my_cpu::ram::RamAddr;
+use my_cpu::cpu_core::ram::RamAddr;
 
 
 /// These tests test [`RamAddr`]

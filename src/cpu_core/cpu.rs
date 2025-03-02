@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 use crate::define_opcodes;
-pub use crate::ram::{RamAddr, RamUnit, RAM};
-pub use crate::error::{ErrorType, CPUError};
+pub use super::ram::{RamAddr, RamUnit, RAM};
+pub use super::error::{ErrorType, CPUError};
 
 /// Represents a CPU instruction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -509,22 +509,22 @@ impl CPU {
     fn execute_div(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| x.overflowing_div(y))
     }
-    
+
     /// FAdd instruction
     fn execute_fadd(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_float_operator(|x, y| x + y)
     }
-    
+
     /// FSub instruction
     fn execute_fsub(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_float_operator(|x, y| x - y)
     }
-    
+
     /// FMul instruction
     fn execute_fmul(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_float_operator(|x, y| x * y)
     }
-    
+
     /// FDiv instruction
     fn execute_fdiv(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_float_operator(|x, y| x / y)

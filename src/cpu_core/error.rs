@@ -1,5 +1,5 @@
 use thiserror::Error;
-use crate::cpu::{RamAddr, OperandType};
+use super::cpu::{RamAddr, OperandType};
 
 /// Represents a general error type which can be used throughout this project
 #[derive(Debug, Error)]
