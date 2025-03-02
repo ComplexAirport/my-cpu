@@ -1,7 +1,7 @@
 use my_cpu::ram::{RAM, RamAddr};
 
 
-/// These tests test [`RAM`]
+/// These tests test [`RAM`] functionality
 #[cfg(test)]
 mod tests {
     use super::{*};

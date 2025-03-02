@@ -8,24 +8,13 @@ fn main() {
     // An example program with our assembler
     
     let mut assembler = Assembler::new();
-
+    
     assembler.add_instr(CPUInstr::Set);
     assembler.add_reg(0);
-    assembler.add_imm(-1);
-
-    assembler.add_label(Label::from("begin"));
-
-    assembler.add_instr(CPUInstr::Sub);
-    assembler.add_reg(0);
-    assembler.add_imm(1);
-
-    assembler.add_instr(CPUInstr::Set);
-    assembler.add_reg(0);
-    assembler.add_accu();
-
-    assembler.add_jump_if_not(Operand::Flag(CPUFlag::Sign), Label::from("begin"));
-
-    assembler.add_jump(Label::from("begin"));
+    assembler.add_float(2.0);
+    
+    assembler.add_instr(CPUInstr::Halt);
+    
     
     let mut ram = RAM::new(128);
     assembler.write_to_ram(&mut ram).unwrap();

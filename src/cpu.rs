@@ -298,6 +298,9 @@ pub type RegType = i64;
 /// Represents the type of the immediate value
 pub type ImmType = RegType;
 
+/// Represents the type of the float value
+pub type FloatType = f64;
+
 /// Represents the address of the first instruction for the CPU
 pub const CPU_START_ADDR: RamAddr = RamAddr(0x0_usize);
 
@@ -506,14 +509,26 @@ impl CPU {
     fn execute_div(&mut self) -> Result<(), ErrorType> {
         self.execute_bin_operator(|x, y| x.overflowing_div(y))
     }
-
-    fn execute_fadd(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
-
-    fn execute_fsub(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
-
-    fn execute_fmul(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
-
-    fn execute_fdiv(&mut self) -> Result<(), ErrorType> { Ok(()) } // todo 
+    
+    /// FAdd instruction
+    fn execute_fadd(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_float_operator(|x, y| x + y)
+    }
+    
+    /// FSub instruction
+    fn execute_fsub(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_float_operator(|x, y| x - y)
+    }
+    
+    /// FMul instruction
+    fn execute_fmul(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_float_operator(|x, y| x * y)
+    }
+    
+    /// FDiv instruction
+    fn execute_fdiv(&mut self) -> Result<(), ErrorType> {
+        self.execute_bin_float_operator(|x, y| x / y)
+    }
 
     /// Logical And instruction
     fn execute_and(&mut self) -> Result<(), ErrorType> {
@@ -674,6 +689,41 @@ impl CPU {
         Ok(())
     }
 
+
+    fn execute_bin_float_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(FloatType, FloatType) -> FloatType,
+    {
+        let lhs = imm_as_float(self.read_operand_value()?);
+        let rhs = imm_as_float(self.read_operand_value()?);
+
+        let result = op(lhs, rhs);
+
+        // Reset the flags before setting them so that they represent the result
+        // of the latest arithmetic operation
+        self.reset_flags();
+
+        // If the operation overflowed, set the Overflow flag
+        if result.is_finite() {
+            self.enable_flag(CPUFlag::Overflow);
+        }
+
+        // If the result is negative, set the Sign flag
+        if result.is_sign_negative() {
+            self.enable_flag(CPUFlag::Sign);
+        }
+
+        // If the result is zero, set the zero flag
+        if result == 0.0 {
+            self.enable_flag(CPUFlag::Zero);
+        }
+
+        self.set_accu_reg(float_as_imm(result));
+
+        Ok(())
+    }
+
+
     /// Executes a logical binary operator. (logical operator with two arguments) \
     /// Accepts a function - the operation itself which returns `bool`
     /// - Assigns the Accumulator register to the result of the operation
@@ -790,30 +840,25 @@ impl CPU {
     /// - Automatically increments the program counter.
     fn read_operand_value(&mut self) -> Result<ImmType, ErrorType> {
         let operand = self.read_operand_type()?;
-        let mut pc = self.prog_counter.unwrap();
         match operand {
             OperandType::MemoryAddress => {
-                let value = self.fetch_value_from_mem_addr(pc)?;
-                pc.inc(MEMORY_ADDRESS_SIZE)?;
-                self.set_program_counter(pc);
+                let value = self.fetch_value_from_mem_addr(self.prog_counter.unwrap())?;
+                self.inc_prog_counter(MEMORY_ADDRESS_SIZE);
                 Ok(value)
             }
             OperandType::Register => {
-                let value = self.fetch_value_from_reg(pc)?;
-                pc.inc(REGISTER_SIZE)?;
-                self.set_program_counter(pc);
+                let value = self.fetch_value_from_reg(self.prog_counter.unwrap())?;
+                self.inc_prog_counter(REGISTER_SIZE);
                 Ok(value)
             }
             OperandType::Flag => {
-                let value = self.fetch_value_from_flag(pc)?.as_byte() as RegType;
-                pc.inc(FLAG_TYPE_SIZE)?;
-                self.set_program_counter(pc);
+                let value = self.fetch_value_from_flag(self.prog_counter.unwrap())?.as_byte() as RegType;
+                self.inc_prog_counter(FLAG_TYPE_SIZE);
                 Ok(value)
             }
             OperandType::Immediate => {
-                let value = self.fetch_imm(pc)?;
-                pc.inc(IMMEDIATE_VALUE_SIZE)?;
-                self.set_program_counter(pc);
+                let value = self.fetch_imm(self.prog_counter.unwrap())?;
+                self.inc_prog_counter(IMMEDIATE_VALUE_SIZE);
                 Ok(value)
             }
         }
@@ -1042,4 +1087,19 @@ impl CPU {
 
         println!("Executed instruction: {:?}", self.instr_reg);
     }
+}
+
+
+/// Helper function.
+/// Converts [`ImmType`] to [`FloatType`] using the raw bytes. Basically, converts the integer
+/// to raw bytes and reinterprets them as float
+pub const fn imm_as_float(val: ImmType) -> FloatType {
+    FloatType::from_le_bytes(val.to_le_bytes())
+}
+
+/// Helper function
+/// Converts [`FloatType`] to [`ImmType`] using the raw bytes. Basically, converts the integer
+/// to raw bytes and reinterprets them as float
+pub const fn float_as_imm(val: FloatType) -> ImmType {
+    ImmType::from_le_bytes(val.to_le_bytes())
 }

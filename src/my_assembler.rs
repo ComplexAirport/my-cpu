@@ -300,6 +300,12 @@ impl Assembler {
         self.add_resolved(ResolvedUnit::Operand(Operand::Immediate(imm)));
     }
 
+    /// Add a float to the instruction. In reality, this method
+    /// reinterprets the float's bytes as integer bytes in does `add_imm`
+    pub fn add_float(&mut self, f: FloatType) {
+        self.add_imm(float_as_imm(f))
+    }
+    
     /// Adds a [`CPUInstr::Jump`] to the instructions with specified label
     pub fn add_jump(&mut self, label: Label) {
         self.add_unresolved_jump(UnresolvedJump::Jump(label));
@@ -324,8 +330,7 @@ impl Assembler {
     pub fn add_jump_if_less(&mut self, op1: Operand, op2: Operand, sym: Label) {
         self.add_unresolved_jump(UnresolvedJump::JumpIfLess(op1, op2, sym));
     }
-
-
+    
     /// Adds a [`CPUInstr::JumpIfEqual`] to the instructions with label
     pub fn add_jump_if_eq(&mut self, op1: Operand, op2: Operand, sym: Label) {
         self.add_unresolved_jump(UnresolvedJump::JumpIfEqual(op1, op2, sym));
