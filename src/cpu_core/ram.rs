@@ -377,7 +377,7 @@ impl RAM {
 impl RAM {
     /** Unsigned */
     pub fn alloc_u8(&mut self, val: u8) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_u8(&self, start: RamAddr) -> Result<u8, RAMError> {
@@ -385,7 +385,7 @@ impl RAM {
     }
 
     pub fn alloc_u16(&mut self, val: u16) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_u16(&self, start: RamAddr) -> Result<u16, RAMError> {
@@ -393,7 +393,7 @@ impl RAM {
     }
 
     pub fn alloc_u32(&mut self, val: u32) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_u32(&self, start: RamAddr) -> Result<u32, RAMError> {
@@ -401,7 +401,7 @@ impl RAM {
     }
 
     pub fn alloc_u64(&mut self, val: u64) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_u64(&self, start: RamAddr) -> Result<u64, RAMError> {
@@ -409,7 +409,7 @@ impl RAM {
     }
 
     pub fn alloc_u128(&mut self, val: u128) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_u128(&self, start: RamAddr) -> Result<u128, RAMError> {
@@ -418,7 +418,7 @@ impl RAM {
 
     /** Signed */
     pub fn alloc_i8(&mut self, val: i8) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_i8(&self, start: RamAddr) -> Result<i8, RAMError> {
@@ -426,7 +426,7 @@ impl RAM {
     }
 
     pub fn alloc_i16(&mut self, val: i16) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_i16(&self, start: RamAddr) -> Result<i16, RAMError> {
@@ -434,7 +434,7 @@ impl RAM {
     }
 
     pub fn alloc_i32(&mut self, val: i32) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_i32(&self, start: RamAddr) -> Result<i32, RAMError> {
@@ -442,7 +442,7 @@ impl RAM {
     }
 
     pub fn alloc_i64(&mut self, val: i64) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_i64(&self, start: RamAddr) -> Result<i64, RAMError> {
@@ -450,7 +450,7 @@ impl RAM {
     }
 
     pub fn alloc_i128(&mut self, val: i128) -> Result<RamAddr, RAMError> {
-        self.alloc_bytes(&val.to_le_bytes())
+        self.alloc_bytes(val.to_le_bytes())
     }
 
     pub fn read_i128(&self, start: RamAddr) -> Result<i128, RAMError> {
