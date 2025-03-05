@@ -445,63 +445,63 @@ impl CPU {
         self.set_program_counter(pc);
 
         let res = match self.instr_reg {
-            CPUInstr::Halt => {}
-            CPUInstr::Set => {}
-            CPUInstr::UAdd => {}
-            CPUInstr::USub => {}
-            CPUInstr::UMul => {}
-            CPUInstr::UMod => {}
-            CPUInstr::UDiv => {}
-            CPUInstr::UOr => {}
-            CPUInstr::UXor => {}
-            CPUInstr::UAnd => {}
-            CPUInstr::UNot => {}
-            CPUInstr::UShl => {}
-            CPUInstr::UShr => {}
-            CPUInstr::IAdd => {}
-            CPUInstr::ISub => {}
-            CPUInstr::IMul => {}
-            CPUInstr::IMod => {}
-            CPUInstr::IDiv => {}
-            CPUInstr::IOr => {}
-            CPUInstr::IXor => {}
-            CPUInstr::IAnd => {}
-            CPUInstr::INot => {}
-            CPUInstr::IShl => {}
-            CPUInstr::IShr => {}
-            CPUInstr::FAdd => {}
-            CPUInstr::FSub => {}
-            CPUInstr::FMul => {}
-            CPUInstr::FDiv => {}
-            CPUInstr::LOr => {}
-            CPUInstr::LXor => {}
-            CPUInstr::LAnd => {}
-            CPUInstr::LNot => {}
-            CPUInstr::Jump => {}
-            CPUInstr::JumpIf => {}
-            CPUInstr::JumpIfNot => {}
-            CPUInstr::UEqual => {}
-            CPUInstr::UGreater => {}
-            CPUInstr::UGreaterEqual => {}
-            CPUInstr::ULess => {}
-            CPUInstr::ULessEqual => {}
-            CPUInstr::IEqual => {}
-            CPUInstr::IGreater => {}
-            CPUInstr::IGreaterEqual => {}
-            CPUInstr::ILess => {}
-            CPUInstr::ILessEqual => {}
-            CPUInstr::FEqual => {}
-            CPUInstr::FGreater => {}
-            CPUInstr::FGreaterEqual => {}
-            CPUInstr::FLess => {}
-            CPUInstr::FLessEqual => {}
-            CPUInstr::Syscall => {}
+            CPUInstr::Halt => self.execute_halt(),
+            CPUInstr::Set => self.execute_set(),
+            CPUInstr::UAdd => self.execute_u_add(),
+            CPUInstr::USub => self.execute_u_sub(),
+            CPUInstr::UMul => self.execute_u_mul(),
+            CPUInstr::UMod => self.execute_u_mod(),
+            CPUInstr::UDiv => self.execute_u_div(),
+            CPUInstr::UOr => self.execute_u_or(),
+            CPUInstr::UXor => self.execute_u_xor(),
+            CPUInstr::UAnd => self.execute_u_and(),
+            CPUInstr::UNot => self.execute_u_not(),
+            CPUInstr::UShl => self.execute_u_shl(),
+            CPUInstr::UShr => self.execute_u_shr(),
+            CPUInstr::IAdd => self.execute_i_add(),
+            CPUInstr::ISub => self.execute_i_sub(),
+            CPUInstr::IMul => self.execute_i_mul(),
+            CPUInstr::IMod => self.execute_i_mod(),
+            CPUInstr::IDiv => self.execute_i_div(),
+            CPUInstr::IOr => self.execute_i_or(),
+            CPUInstr::IXor => self.execute_i_xor(),
+            CPUInstr::IAnd => self.execute_i_and(),
+            CPUInstr::INot => self.execute_i_not(),
+            CPUInstr::IShl => self.execute_i_shl(),
+            CPUInstr::IShr => self.execute_i_shr(),
+            CPUInstr::FAdd => self.execute_f_add(),
+            CPUInstr::FSub => self.execute_f_sub(),
+            CPUInstr::FMul => self.execute_f_mul(),
+            CPUInstr::FDiv => self.execute_f_div(),
+            CPUInstr::LOr => self.execute_l_or(),
+            CPUInstr::LXor => self.execute_l_xor(),
+            CPUInstr::LAnd => self.execute_l_and(),
+            CPUInstr::LNot => self.execute_l_not(),
+            CPUInstr::Jump => self.execute_jump(),
+            CPUInstr::JumpIf => self.execute_jump_if(),
+            CPUInstr::JumpIfNot => self.execute_jump_if_not(),
+            CPUInstr::UEqual => self.execute_u_equal(),
+            CPUInstr::UGreater => self.execute_u_greater(),
+            CPUInstr::UGreaterEqual => self.execute_u_greater_equal(),
+            CPUInstr::ULess => self.execute_u_less(),
+            CPUInstr::ULessEqual => self.execute_u_less_equal(),
+            CPUInstr::IEqual => self.execute_i_equal(),
+            CPUInstr::IGreater => self.execute_i_greater(),
+            CPUInstr::IGreaterEqual => self.execute_i_greater_equal(),
+            CPUInstr::ILess => self.execute_i_less(),
+            CPUInstr::ILessEqual => self.execute_i_less_equal(),
+            CPUInstr::FEqual => self.execute_f_equal(),
+            CPUInstr::FGreater => self.execute_f_greater(),
+            CPUInstr::FGreaterEqual => self.execute_u_greater_equal(),
+            CPUInstr::FLess => self.execute_f_less(),
+            CPUInstr::FLessEqual => self.execute_f_less_equal(),
+            CPUInstr::Syscall => self.execute_syscall(),
+            
         };
 
         self.inc_instruction_counter();
 
-        Ok(())
-        // res
+        res
     }
 
     /// At the moment only exists for debugging purposes, might delete later
@@ -513,13 +513,91 @@ impl CPU {
 }
 
 
-/** Main CPU instruction methods */
+/** This section contains main CPU instructions
+Most of the instruction call helper methods instead of operating directly
+*/
 impl CPU {
-
+    fn execute_halt(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    fn execute_set(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_u_add(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_sub(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_mul(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_mod(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_div(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    fn execute_u_or(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_xor(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_and(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_not(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    fn execute_u_shl(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_shr(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_i_add(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_sub(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_mul(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_mod(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_div(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    fn execute_i_or(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_xor(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_and(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_not(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    fn execute_i_shl(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_shr(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_f_add(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_sub(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_mul(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_div(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_l_or(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_l_xor(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_l_and(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_l_not(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_jump(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_jump_if(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_u_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_greater(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_less(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_i_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_greater(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_less(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_f_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_greater(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_less(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    
+    
+    fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
 
 
-/** This section contains methods for operations with integers */
+/** This section contains general methods for:
+1. Binary and unary arithmetic operators in our CPU
+2. Binary and unary logical operators in our CPU
+*/
 impl CPU {
     /// Executes an **Arithmetic**, **Binary** (two arguments) operator.
     /// ## Usage
@@ -616,6 +694,29 @@ impl CPU {
         Ok(())
     }
 
+
+    /// Executes a **Logical**, **Unary** (one argument) operator.
+    /// ## Usage
+    /// The argument function is `(bool) -> bool` \
+    /// An example of `F` is
+    /// ```rust
+    /// |x| x == 0 // logical NOT operator
+    /// ```
+    /// ## Flags and registers
+    /// This method:
+    /// - Assigns the Accumulator register to the result of the operation
+    /// - Sets the `Zero` flag if the result is `false`.
+    /// - Does **not** set the `Overflow` flag since logical operators operate on `bool`-s and cannot
+    /// overflow
+    fn unary_logical_op<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(bool) -> bool
+    {
+        let lhs = self.extract_operand()?.as_bool();
+        let result = op(lhs);
+        self.set_logical_result_flags(result);
+        Ok(())
+    }
 
 
     /// Helper method. Sets flags according to an arithmetic operator result
