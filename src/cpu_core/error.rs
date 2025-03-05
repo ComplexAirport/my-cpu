@@ -72,6 +72,7 @@ pub enum CPUError {
     #[error("Invalid flag number: {0}")]
     InvalidFlag(u8),
 
+    /// Received an invalid jump address (for example, the address is out of bounds)
     #[error("Invalid jump address: {0:?}")]
     InvalidJump(RamAddr),
 
@@ -79,4 +80,8 @@ pub enum CPUError {
     /// Accepts the operand type that was not allowed.
     #[error("Operand type {0:?} is not allowed.")]
     OperandTypeNotAllowed(OperandType),
+    
+    /// Divided by zero
+    #[error("Division by zero")]
+    DivisionByZero
 }

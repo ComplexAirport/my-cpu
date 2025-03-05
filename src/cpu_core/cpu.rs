@@ -4,6 +4,12 @@ pub use super::typing::{*};
 pub use super::ram::{RamAddr, RamUnit, RAM};
 pub use super::error::{ErrorType, CPUError};
 
+
+pub const DBG_CLS: bool = false;     // TODO: delete
+pub const DBG_SLEEP: usize = 0;      // TODO: delete
+pub const DBG_PRINT: bool = true;    // TODO: delete
+
+
 /// Represents a CPU instruction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CPUInstr {
@@ -502,10 +508,13 @@ impl CPU {
     }
 
     /// At the moment only exists for debugging purposes, might delete later
+    /// TODO: delete
     fn inc_instruction_counter(&mut self) {
         self.instruction_counter += 1;
         self.print();
-        std::thread::sleep(std::time::Duration::from_millis(2000));
+        if DBG_SLEEP != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(DBG_SLEEP as u64));
+        }
     }
 }
 
@@ -555,10 +564,22 @@ impl CPU {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_mul(y))
     }
     fn execute_u_mod(&mut self) -> Result<(), ErrorType> {
-        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x % y, false)) // Modulo cannot overflow
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| {
+            if y == 0 {
+                (0, true)
+            } else {
+                (x % y, false)
+            }
+        })
     }
     fn execute_u_div(&mut self) -> Result<(), ErrorType> {
-        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_div(y))
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| {
+            if y == 0 {
+                (0, true)
+            } else {
+                x.overflowing_div(y)
+            }
+        })
     }
 
     fn execute_u_or(&mut self) -> Result<(), ErrorType> {
@@ -581,7 +602,7 @@ impl CPU {
     }
     fn execute_u_shr(&mut self) -> Result<(), ErrorType> {
         // TODO: add safe wrapper for `y as u32`
-        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_shl(y as u32))
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_shr(y as u32))
     }
 
 
@@ -595,10 +616,22 @@ impl CPU {
         self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_mul(y))
     }
     fn execute_i_mod(&mut self) -> Result<(), ErrorType> {
-        self.binary_arith_op(|x: Signed64, y: Signed64| (x % y, false)) // Modulo cannot overflow
+        self.binary_arith_op(|x: Signed64, y: Signed64| {
+            if y == 0 {
+                (0, true)
+            } else {
+                (x % y, false)
+            }
+        })
     }
     fn execute_i_div(&mut self) -> Result<(), ErrorType> {
-        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_div(y))
+        self.binary_arith_op(|x: Signed64, y: Signed64| {
+            if y == 0 {
+                (0, true)
+            } else {
+                x.overflowing_div(y)
+            }
+        })
     }
 
     fn execute_i_or(&mut self) -> Result<(), ErrorType> {
@@ -621,7 +654,7 @@ impl CPU {
     }
     fn execute_i_shr(&mut self) -> Result<(), ErrorType> {
         // TODO: add safe wrapper for `y as u32`
-        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_shl(y as u32))
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_shr(y as u32))
     }
 
 
@@ -824,7 +857,7 @@ impl CPU {
     /// - Assigns the Accumulator register to the result of the operation
     /// - Sets the `Zero` flag if the result is `false`.
     /// - Does **not** set the `Overflow` flag since logical operators operate on `bool`-s and cannot
-    /// overflow
+    ///     overflow
     fn binary_logical_op<F>(&mut self, op: F) -> Result<(), ErrorType>
     where
         F: Fn(bool, bool) -> bool
@@ -884,10 +917,9 @@ impl CPU {
     }
 
 
-
     /// Helper method. Sets flags and registers according to an arithmetic operator result
     /// - Sets the `Overflow` flag if overflowed is `true` is `result` is infinite (this means
-    /// [`Float64`] operator overflowed).
+    ///     [`Float64`] operator overflowed).
     /// - Sets the `Zero` flag if `result` is zero.
     /// - Sets the `Sign` flag if `result` is negative.
     fn handle_arith_result<T>(&mut self, result: T, overflowed: bool)
@@ -927,9 +959,9 @@ impl CPU {
 
         if !result {
             self.enable_flag(CPUFlag::Zero);
-            self.set_accu_reg(1); // `true` is implicitly converted to `1`
-        } else {
             self.set_accu_reg(0); // `false` is implicitly converted to `0`
+        } else {
+            self.set_accu_reg(1); // `true` is implicitly converted to `1`
         }
     }
 }
@@ -993,11 +1025,10 @@ impl CPU {
         Ok(addr)
     }
 
-    /// Reads the next 8 bytes and returns it as `usize` (the register number).
+    /// Reads the next 1 byte and returns it as `usize` (the register number).
     /// - Increments the program counter
     fn read_reg(&mut self) -> Result<usize, ErrorType> {
-        let bytes = self.ram.read_bytes::<8>(self.prog_counter.unwrap())?;
-        let num = Unsigned64::from_le_bytes(bytes) as usize;
+        let num = self.ram.read_byte(self.prog_counter.unwrap())? as usize;
         self.inc_prog_counter(REG_NUM_SIZE)?;
         Ok(num)
     }
@@ -1145,11 +1176,18 @@ impl CPU {
 /** Prints the cpu state. NOTE: Only for debugging purposes */
 impl CPU {
     pub fn print(&self) {
+        if !DBG_PRINT {
+            return;
+        }
+
         // Clear the screen (only implemented for window)
-        std::process::Command::new("cmd")
-            .args(["/c", "cls"])
-            .status()
-            .unwrap();
+        if DBG_CLS {
+            std::process::Command::new("cmd")
+                .args(["/c", "cls"])
+                .status()
+                .unwrap();
+        }
+
 
         println!("Instruction {}\n", self.instruction_counter);
 
