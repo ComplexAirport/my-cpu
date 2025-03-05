@@ -1,5 +1,5 @@
 pub use super::error::RAMError;
-
+pub use super::typing::SingleByte;
 
 /// Stores a RAM address. \
 /// For example: `0x00AC20FF`
@@ -49,19 +49,7 @@ impl RamAddr {
 
 
 /// Smallest addressable unit in our `RAM`.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct RamUnit(pub u8);
-
-impl RamUnit {
-    pub fn new() -> Self {
-        Self(0u8)
-    }
-
-    /// Assign a value (convertible to `u8`) to this memory unit.
-    pub fn set<T: Into<u8>>(&mut self, value: T) {
-        self.0 = value.into();
-    }
-}
+pub type RamUnit = SingleByte;
 
 
 /// Represents a free memory segment in the RAM.
@@ -88,12 +76,13 @@ pub struct RAM {
     free_segments: Vec<FreeSegment>,
 }
 
+
 /** `new` method */
 impl RAM {
     /// Create a new `RAM` with the entire region free.
     pub fn new(size: usize) -> Self {
         Self {
-            mem: vec![RamUnit::new(); size].into_boxed_slice(),
+            mem: vec![0u8; size].into_boxed_slice(),
             // Initially, we have one big free segment spanning the entire memory.
             free_segments: vec![FreeSegment {
                 start: RamAddr(0),
@@ -187,7 +176,7 @@ impl RAM {
     }
 
     /// Allocate bytes to the memory
-    pub fn alloc_bytes<B: AsRef<[u8]>>(&mut self, bytes: B) -> Result<RamAddr, RAMError> {
+    pub fn alloc_bytes<B: AsRef<[SingleByte]>>(&mut self, bytes: B) -> Result<RamAddr, RAMError> {
         let bytes = bytes.as_ref();
         let byte_count = bytes.len();
         let addr = self.allocate(byte_count)?;
@@ -259,9 +248,9 @@ impl RAM {
     }
 
     /// Write a byte at `addr`, returning an error if out of bounds.
-    pub fn write_byte(&mut self, addr: RamAddr, val: u8) -> Result<(), RAMError> {
+    pub fn write_byte(&mut self, addr: RamAddr, val: SingleByte) -> Result<(), RAMError> {
         if addr.0 < self.mem.len() {
-            self.mem[addr.0].0 = val;
+            self.mem[addr.0] = val;
             Ok(())
         } else {
             Err(RAMError::OutOfBounds(addr))
@@ -335,39 +324,37 @@ impl RAM {
         addr.as_ref().0 < self.mem.len()
     }
 
-    /// Get a shared reference to the `MemUnit` at `addr`, if valid.
-    pub fn at<T>(&self, addr: T) -> Result<&RamUnit, RAMError>
+    /// Get the value at `addr` in RAM, if it is valid.
+    pub fn at<T>(&self, addr: T) -> Result<RamUnit, RAMError>
     where
         T: Into<RamAddr>,
     {
         let idx = addr.into();
         if idx.0 < self.mem.len() {
-            Ok(&self.mem[idx.0])
+            Ok(self.mem[idx.0])
         } else {
             Err(RAMError::OutOfBounds(idx))
         }
     }
 
     /// Read the byte at address
-    pub fn read_byte(&self, addr: RamAddr) -> Result<u8, RAMError> {
+    pub fn read_byte(&self, addr: RamAddr) -> Result<RamUnit, RAMError> {
         if addr.0 < self.mem.len() {
-            Ok(self.mem[addr.0].0)
+            Ok(self.mem[addr.0])
         } else {
             Err(RAMError::OutOfBounds(addr))
         }
     }
 
-    /// Read bytes from the memory
-    fn read_bytes(&self, start: RamAddr, size: usize) -> Result<Vec<u8>, RAMError> {
-        if !self.is_free(start, size) {
-            let slice: Vec<u8> = self.mem[start.0..(start.0+size)]
-                .iter()
-                .map(|i| i.0)
-                .collect();
-            assert_eq!(slice.len(), size);
-            Ok(slice)
+    /// Read `N` bytes from the memory and return as an array of `N` elements
+    pub fn read_bytes<const N: usize>(&self, start: RamAddr) -> Result<[RamUnit; N], RAMError> {
+        if !self.is_free(start, N) {
+            let res: [RamUnit; N] = (&self.mem[start.0..start.0 + N])
+                .try_into()
+                .unwrap();
+            Ok(res)
         } else {
-            Err(RAMError::InvalidRead(start, size))
+            Err(RAMError::InvalidRead(start, N))
         }
     }
 }
@@ -381,7 +368,7 @@ impl RAM {
     }
 
     pub fn read_u8(&self, start: RamAddr) -> Result<u8, RAMError> {
-        Ok(u8::from_le_bytes(self.read_bytes(start, 1)?.try_into().unwrap()))
+        Ok(u8::from_le_bytes(self.read_bytes::<1>(start)?))
     }
 
     pub fn alloc_u16(&mut self, val: u16) -> Result<RamAddr, RAMError> {
@@ -389,7 +376,7 @@ impl RAM {
     }
 
     pub fn read_u16(&self, start: RamAddr) -> Result<u16, RAMError> {
-        Ok(u16::from_le_bytes(self.read_bytes(start, 2)?.try_into().unwrap()))
+        Ok(u16::from_le_bytes(self.read_bytes::<2>(start)?))
     }
 
     pub fn alloc_u32(&mut self, val: u32) -> Result<RamAddr, RAMError> {
@@ -397,7 +384,7 @@ impl RAM {
     }
 
     pub fn read_u32(&self, start: RamAddr) -> Result<u32, RAMError> {
-        Ok(u32::from_le_bytes(self.read_bytes(start, 4)?.try_into().unwrap()))
+        Ok(u32::from_le_bytes(self.read_bytes::<4>(start)?))
     }
 
     pub fn alloc_u64(&mut self, val: u64) -> Result<RamAddr, RAMError> {
@@ -405,7 +392,7 @@ impl RAM {
     }
 
     pub fn read_u64(&self, start: RamAddr) -> Result<u64, RAMError> {
-        Ok(u64::from_le_bytes(self.read_bytes(start, 8)?.try_into().unwrap()))
+        Ok(u64::from_le_bytes(self.read_bytes::<8>(start)?))
     }
 
     pub fn alloc_u128(&mut self, val: u128) -> Result<RamAddr, RAMError> {
@@ -413,7 +400,7 @@ impl RAM {
     }
 
     pub fn read_u128(&self, start: RamAddr) -> Result<u128, RAMError> {
-        Ok(u128::from_le_bytes(self.read_bytes(start, 16)?.try_into().unwrap()))
+        Ok(u128::from_le_bytes(self.read_bytes::<16>(start)?))
     }
 
     /** Signed */
@@ -422,7 +409,7 @@ impl RAM {
     }
 
     pub fn read_i8(&self, start: RamAddr) -> Result<i8, RAMError> {
-        Ok(i8::from_le_bytes(self.read_bytes(start, 1)?.try_into().unwrap()))
+        Ok(i8::from_le_bytes(self.read_bytes::<1>(start)?))
     }
 
     pub fn alloc_i16(&mut self, val: i16) -> Result<RamAddr, RAMError> {
@@ -430,7 +417,7 @@ impl RAM {
     }
 
     pub fn read_i16(&self, start: RamAddr) -> Result<i16, RAMError> {
-        Ok(i16::from_le_bytes(self.read_bytes(start, 2)?.try_into().unwrap()))
+        Ok(i16::from_le_bytes(self.read_bytes::<2>(start)?))
     }
 
     pub fn alloc_i32(&mut self, val: i32) -> Result<RamAddr, RAMError> {
@@ -438,7 +425,7 @@ impl RAM {
     }
 
     pub fn read_i32(&self, start: RamAddr) -> Result<i32, RAMError> {
-        Ok(i32::from_le_bytes(self.read_bytes(start, 4)?.try_into().unwrap()))
+        Ok(i32::from_le_bytes(self.read_bytes::<4>(start)?))
     }
 
     pub fn alloc_i64(&mut self, val: i64) -> Result<RamAddr, RAMError> {
@@ -446,7 +433,7 @@ impl RAM {
     }
 
     pub fn read_i64(&self, start: RamAddr) -> Result<i64, RAMError> {
-        Ok(i64::from_le_bytes(self.read_bytes(start, 8)?.try_into().unwrap()))
+        Ok(i64::from_le_bytes(self.read_bytes::<8>(start)?))
     }
 
     pub fn alloc_i128(&mut self, val: i128) -> Result<RamAddr, RAMError> {
@@ -454,7 +441,7 @@ impl RAM {
     }
 
     pub fn read_i128(&self, start: RamAddr) -> Result<i128, RAMError> {
-        Ok(i128::from_le_bytes(self.read_bytes(start, 16)?.try_into().unwrap()))
+        Ok(i128::from_le_bytes(self.read_bytes::<16>(start)?))
     }
 }
 
@@ -466,20 +453,8 @@ impl<T: Into<usize>> From<T> for RamAddr {
     }
 }
 
-impl<T: Into<u8>> From<T> for RamUnit {
-    fn from(value: T) -> Self {
-        RamUnit(value.into())
-    }
-}
-
 impl std::fmt::Debug for RamAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x{:010x}", self.0)
-    }
-}
-
-impl std::fmt::Debug for RamUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }

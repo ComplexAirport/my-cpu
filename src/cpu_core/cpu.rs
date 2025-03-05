@@ -1,5 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 use crate::define_opcodes;
+pub use super::typing::{*};
 pub use super::ram::{RamAddr, RamUnit, RAM};
 pub use super::error::{ErrorType, CPUError};
 
@@ -9,93 +10,60 @@ pub enum CPUInstr {
     /// Halts the cpu (no more instructions are executing)
     Halt,
 
-    /// Sets value of #1 to value at #2 (Note: #1 is not allowed to be an immediate value)
+    /// Sets value of #1 to value at #2
+    /// (Note: #1 is not allowed to be an immediate value)
     Set,
 
-    /// Adds the value at #1 to the value at #2 and stores the result in accu register
-    Add,
+    /// Unsigned instructions
+    /// These instructions interpret the operands as `u64` bytes */
+    UAdd, USub, UMul, UMod, UDiv, // Arithmetic operators
+    UOr, UXor, UAnd, UNot,        // Bitwise operators
+    UShl, UShr,                   // Shift left (<<) and Shift right (>>) operators
 
-    /// Subtracts the value at #2 from the value at #1 and stores the result in accu register
-    Sub,
+    /// Signed instructions
+    /// These instructions interpret the operands `i64` bytes
+    IAdd, ISub, IMul, IMod, IDiv, // Arithmetic operators
+    IOr, IXor, IAnd, INot,        // Bitwise operators
+    IShl, IShr,                   // Shift left (<<) and Shift right (>>) operators
 
-    /// Multiplies the value at #1 and the value at #2 and stores the result in accu register
-    Mul,
+    /// Floating operator instructions
+    /// These instructions interpret the operands as `f64` bytes
+    FAdd, FSub, FMul, FDiv, // Arithmetic operators
 
-    /// Does the value at #1 modulo the value at #2 and stores the result in accu register
-    Mod,
+    /// Logical operators
+    /// (treats operands as boolean values: zero = false, nonzero = true)
+    LOr, LXor, LAnd, LNot,
 
-    /// Divides the value at #1 by the value at #2 (round division, floors the result)
-    /// and stores the result in accu register
-    Div,
+    /// Jump instructions
+    Jump,           // Jumps to a memory address
+    JumpIf,         // Jumps to [1] if [2] is nonzero
+    JumpIfNot,      // Jumps to [1] if [2] is zero
 
+    /// Unsigned comparison instructions
+    UEqual,             // ==
+    UGreater,           // >
+    UGreaterEqual,      // >=
+    ULess,              // <
+    ULessEqual,         // <=
 
-    /// Adds the value at #1 as float to the value at #2 as float and stores the result in accu register
-    FAdd,
+    /// Signed comparison instructions
+    IEqual,             // ==
+    IGreater,           // >
+    IGreaterEqual,      // >=
+    ILess,              // <
+    ILessEqual,         // <=
 
-    /// Subtracts the value at #2 as float from the value at #1 as float
-    /// and stores the result in accu register
-    FSub,
+    /// Float comparison instructions
+    FEqual,             // ==
+    FGreater,           // >
+    FGreaterEqual,      // >=
+    FLess,              // <
+    FLessEqual,         // <=
 
-    /// Multiplies the value at #2 as float from the value at #1 as float
-    /// and stores the result in accu register
-    FMul,
-
-    /// Divides the value at #1 by the value at  #2 (float division, does not floor the result)
-    /// and stores the result in accu register
-    FDiv,
-
-
-    /// Does boolean (the value at #1 **AND** the value at #2) and stores the result in accu register
-    And,
-
-    /// Does boolean (the value at #1 **OR** the value at #2) and stores the result in accu register
-    Or,
-
-    /// Does boolean (the value at #1 **XOR** the value at #2) and stores the result in accu register
-    Xor,
-
-    /// Does boolean (**NOT** the value at #1) and stores the result in accu register
-    Not,
-
-
-    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
-    BitwiseAnd,
-
-    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
-    BitwiseOr,
-
-    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
-    BitwiseXor,
-
-    /// Does bitwise NOT ~(the value at #1) and stores the result in accu register
-    BitwiseNot,
-
-    /// Shifts the value at #1 left by `n` positions and stores the result in accu register
-    Shl,
-
-    /// Shifts the value at #1 right by `n` positions and stores the result in accu register
-    Shr,
-
-
-    /// Jumps to the specified **memory address** #1 (_'jumps'_ means the next instruction will be
-    /// the byte at the specified memory address)
-    Jump,
-
-    /// Jumps to the specified memory address (#2) if the value at #1 is non-zero
-    JumpIf,
-
-    /// Jumps to the specified memory address (#2) if the value at #1 is zero
-    JumpIfNot,
-
-    /// Jumps to the specified memory address (#3) if the value at #1 is greater than the value at #2
-    JumpIfGreater,
-
-    /// Jumps to the specified memory address (#3) if the value at #1 is less than the value at #2
-    JumpIfLess,
-
-    /// Jumps to the specified memory address (#3) if the value at #1 is equal to the value at #2
-    JumpIfEqual
+    /// Syscall instruction
+    Syscall
 }
+
 
 impl CPUInstr {
      define_opcodes!(
@@ -103,68 +71,111 @@ impl CPUInstr {
 
         SET,
 
-        ADD,
-        SUB,
-        MUL,
-        MOD,
-        DIV,
+        UADD, USUB, UMUL, UMOD, UDIV,
+        UOR, UXOR, UAND, UNOT,
+        USHL, USHR,
 
-        F_ADD,
-        F_SUB,
-        F_MUL,
-        F_DIV,
+        IADD, ISUB, IMUL, IMOD, IDIV,
+        IOR, IXOR, IAND, INOT,
+        ISHL, ISHR,
 
-        AND,
-        OR,
-        XOR,
-        NOT,
 
-        BITWISE_AND,
-        BITWISE_OR,
-        BITWISE_XOR,
-        BITWISE_NOT,
+        FADD, FSUB, FMUL, FDIV,
 
-        SHL,
-        SHR,
+        LOR, LXOR, LAND, LNOT,
 
         JUMP,
-        JUMP_IF,
-        JUMP_IF_NOT,
-        JUMP_IF_GREATER,
-        JUMP_IF_LESS,
-        JUMP_IF_EQUAL
-    );
+        JUMPIF,
+        JUMPIFNOT,
+
+        UEQUAL,
+        UGREATER,
+        UGREATEREQUAL,
+        ULESS,
+        ULESSEQUAL,
+
+        IEQUAL,
+        IGREATER,
+        IGREATEREQUAL,
+        ILESS,
+        ILESSEQUAL,
+
+        FEQUAL,
+        FGREATER,
+        FGREATEREQUAL,
+        FLESS,
+        FLESSEQUAL,
+
+        SYSCALL
+     );
 
     /// Represents the instruction in a byte
     pub const fn as_byte(&self) -> u8 {
         match &self {
             CPUInstr::Halt => Self::HALT,
             CPUInstr::Set => Self::SET,
-            CPUInstr::Add => Self::ADD,
-            CPUInstr::Sub => Self::SUB,
-            CPUInstr::Mul => Self::MUL,
-            CPUInstr::Mod => Self::MOD,
-            CPUInstr::Div => Self::DIV,
-            CPUInstr::FAdd => Self::F_ADD,
-            CPUInstr::FSub => Self::F_SUB,
-            CPUInstr::FMul => Self::F_MUL,
-            CPUInstr::FDiv => Self::F_DIV,
-            CPUInstr::And => Self::F_ADD,
-            CPUInstr::Or => Self::OR,
-            CPUInstr::Xor => Self::XOR,
-            CPUInstr::Not => Self::NOT,
-            CPUInstr::BitwiseAnd => Self::BITWISE_AND,
-            CPUInstr::BitwiseOr => Self::BITWISE_OR,
-            CPUInstr::BitwiseXor => Self::BITWISE_XOR,
-            CPUInstr::BitwiseNot => Self::BITWISE_NOT,
-            CPUInstr::Shl => Self::SHL,
-            CPUInstr::Shr => Self::SHR,
+
+            CPUInstr::UAdd => Self::UADD,
+            CPUInstr::USub => Self::USUB,
+            CPUInstr::UMul => Self::UMUL,
+            CPUInstr::UMod => Self::UMOD,
+            CPUInstr::UDiv => Self::UDIV,
+
+            CPUInstr::UOr => Self::UOR,
+            CPUInstr::UXor => Self::UXOR,
+            CPUInstr::UAnd => Self::UAND,
+            CPUInstr::UNot => Self::UNOT,
+
+            CPUInstr::UShl => Self::USHL,
+            CPUInstr::UShr => Self::USHR,
+
+            CPUInstr::IAdd => Self::IADD,
+            CPUInstr::ISub => Self::ISUB,
+            CPUInstr::IMul => Self::IMUL,
+            CPUInstr::IMod => Self::IMOD,
+            CPUInstr::IDiv => Self::IDIV,
+
+            CPUInstr::IOr => Self::IOR,
+            CPUInstr::IXor => Self::IXOR,
+            CPUInstr::IAnd => Self::IAND,
+            CPUInstr::INot => Self::INOT,
+
+            CPUInstr::IShl => Self::ISHL,
+            CPUInstr::IShr => Self::ISHR,
+
+            CPUInstr::FAdd => Self::FADD,
+            CPUInstr::FSub => Self::FSUB,
+            CPUInstr::FMul => Self::FMUL,
+            CPUInstr::FDiv => Self::FDIV,
+
+            CPUInstr::LOr => Self::LOR,
+            CPUInstr::LXor => Self::LXOR,
+            CPUInstr::LAnd => Self::LAND,
+            CPUInstr::LNot => Self::LNOT,
+
             CPUInstr::Jump => Self::JUMP,
-            CPUInstr::JumpIf => Self::JUMP_IF,
-            CPUInstr::JumpIfNot => Self::JUMP_IF_NOT,
-            CPUInstr::JumpIfGreater => Self::JUMP_IF_GREATER,
-            CPUInstr::JumpIfLess => Self::JUMP_IF_LESS,
-            CPUInstr::JumpIfEqual => Self::JUMP_IF_EQUAL,
+            CPUInstr::JumpIf => Self::JUMPIF,
+            CPUInstr::JumpIfNot => Self::JUMPIFNOT,
+
+            CPUInstr::UEqual => Self::UEQUAL,
+            CPUInstr::UGreater => Self::UGREATER,
+            CPUInstr::UGreaterEqual => Self::UGREATEREQUAL,
+            CPUInstr::ULess => Self::ULESS,
+            CPUInstr::ULessEqual => Self::ULESSEQUAL,
+
+            CPUInstr::IEqual => Self::IEQUAL,
+            CPUInstr::IGreater => Self::IGREATER,
+            CPUInstr::IGreaterEqual => Self::IGREATEREQUAL,
+            CPUInstr::ILess => Self::ILESS,
+            CPUInstr::ILessEqual => Self::ILESSEQUAL,
+
+            CPUInstr::FEqual => Self::FEQUAL,
+            CPUInstr::FGreater => Self::FGREATER,
+            CPUInstr::FGreaterEqual => Self::FGREATEREQUAL,
+            CPUInstr::FLess => Self::FLESS,
+            CPUInstr::FLessEqual => Self::FLESSEQUAL,
+
+            CPUInstr::Syscall => Self::SYSCALL,
         }
     }
 
@@ -173,32 +184,70 @@ impl CPUInstr {
         match byte {
             Self::HALT => Ok(CPUInstr::Halt),
             Self::SET => Ok(CPUInstr::Set),
-            Self::ADD => Ok(CPUInstr::Add),
-            Self::SUB => Ok(CPUInstr::Sub),
-            Self::MUL => Ok(CPUInstr::Mul),
-            Self::MOD => Ok(CPUInstr::Mod),
-            Self::DIV => Ok(CPUInstr::Div),
-            Self::F_ADD => Ok(CPUInstr::FAdd),
-            Self::F_SUB => Ok(CPUInstr::FSub),
-            Self::F_MUL => Ok(CPUInstr::FMul),
-            Self::F_DIV => Ok(CPUInstr::FDiv),
-            Self::AND => Ok(CPUInstr::And),
-            Self::OR => Ok(CPUInstr::Or),
-            Self::XOR => Ok(CPUInstr::Xor),
-            Self::NOT => Ok(CPUInstr::Not),
-            Self::BITWISE_AND => Ok(CPUInstr::BitwiseAnd),
-            Self::BITWISE_OR => Ok(CPUInstr::BitwiseOr),
-            Self::BITWISE_XOR => Ok(CPUInstr::BitwiseXor),
-            Self::BITWISE_NOT => Ok(CPUInstr::BitwiseNot),
-            Self::SHL => Ok(CPUInstr::Shl),
-            Self::SHR => Ok(CPUInstr::Shr),
+
+            Self::UADD => Ok(CPUInstr::UAdd),
+            Self::USUB => Ok(CPUInstr::USub),
+            Self::UMUL => Ok(CPUInstr::UMul),
+            Self::UMOD => Ok(CPUInstr::UMod),
+            Self::UDIV => Ok(CPUInstr::UDiv),
+
+            Self::UOR => Ok(CPUInstr::UOr),
+            Self::UXOR => Ok(CPUInstr::UXor),
+            Self::UAND => Ok(CPUInstr::UAnd),
+            Self::UNOT => Ok(CPUInstr::UNot),
+
+            Self::USHL => Ok(CPUInstr::UShl),
+            Self::USHR => Ok(CPUInstr::UShr),
+
+            Self::IADD => Ok(CPUInstr::IAdd),
+            Self::ISUB => Ok(CPUInstr::ISub),
+            Self::IMUL => Ok(CPUInstr::IMul),
+            Self::IMOD => Ok(CPUInstr::IMod),
+            Self::IDIV => Ok(CPUInstr::IDiv),
+
+            Self::IOR => Ok(CPUInstr::IOr),
+            Self::IXOR => Ok(CPUInstr::IXor),
+            Self::IAND => Ok(CPUInstr::IAnd),
+            Self::INOT => Ok(CPUInstr::INot),
+
+            Self::ISHL => Ok(CPUInstr::IShl),
+            Self::ISHR => Ok(CPUInstr::IShr),
+
+            Self::FADD => Ok(CPUInstr::FAdd),
+            Self::FSUB => Ok(CPUInstr::FSub),
+            Self::FMUL => Ok(CPUInstr::FMul),
+            Self::FDIV => Ok(CPUInstr::FDiv),
+
+            Self::LOR => Ok(CPUInstr::LOr),
+            Self::LXOR => Ok(CPUInstr::LXor),
+            Self::LAND => Ok(CPUInstr::LAnd),
+            Self::LNOT => Ok(CPUInstr::LNot),
+
             Self::JUMP => Ok(CPUInstr::Jump),
-            Self::JUMP_IF => Ok(CPUInstr::JumpIf),
-            Self::JUMP_IF_NOT => Ok(CPUInstr::JumpIfNot),
-            Self::JUMP_IF_GREATER => Ok(CPUInstr::JumpIfGreater),
-            Self::JUMP_IF_LESS => Ok(CPUInstr::JumpIfLess),
-            Self::JUMP_IF_EQUAL => Ok(CPUInstr::JumpIfEqual),
-            _ => Err(CPUError::InvalidInstruction(byte))
+            Self::JUMPIF => Ok(CPUInstr::JumpIf),
+            Self::JUMPIFNOT => Ok(CPUInstr::JumpIfNot),
+
+            Self::UEQUAL => Ok(CPUInstr::UEqual),
+            Self::UGREATER => Ok(CPUInstr::UGreater),
+            Self::UGREATEREQUAL => Ok(CPUInstr::UGreaterEqual),
+            Self::ULESS => Ok(CPUInstr::ULess),
+            Self::ULESSEQUAL => Ok(CPUInstr::ULessEqual),
+
+            Self::IEQUAL => Ok(CPUInstr::IEqual),
+            Self::IGREATER => Ok(CPUInstr::IGreater),
+            Self::IGREATEREQUAL => Ok(CPUInstr::IGreaterEqual),
+            Self::ILESS => Ok(CPUInstr::ILess),
+            Self::ILESSEQUAL => Ok(CPUInstr::ILessEqual),
+
+            Self::FEQUAL => Ok(CPUInstr::FEqual),
+            Self::FGREATER => Ok(CPUInstr::FGreater),
+            Self::FGREATEREQUAL => Ok(CPUInstr::FGreaterEqual),
+            Self::FLESS => Ok(CPUInstr::FLess),
+            Self::FLESSEQUAL => Ok(CPUInstr::FLessEqual),
+
+            Self::SYSCALL => Ok(CPUInstr::Syscall),
+
+            _ => Err(CPUError::InvalidInstruction(byte)),
         }
     }
 }
@@ -219,7 +268,7 @@ pub enum OperandType {
     MemoryAddress,  // Represents a memory address
     Register,       // Represents a CPU register
     Flag,           // Represents a CPU flag
-    Immediate       // Represents an immediate value - for example, a literal
+    Immediate       // Represents an immediate value (which is 8 bytes)
 }
 
 impl OperandType {
@@ -247,7 +296,7 @@ impl OperandType {
             Self::REGISTER => Ok(OperandType::Register),
             Self::FLAG => Ok(OperandType::Flag),
             Self::IMMEDIATE => Ok(OperandType::Immediate),
-            _ => Err(CPUError::InvalidInstruction(byte))
+            _ => Err(CPUError::InvalidOperandType(byte))
         }
     }
 }
@@ -283,43 +332,40 @@ impl CPUFlag {
             Self::ZERO => Ok(CPUFlag::Zero),
             Self::SIGN => Ok(CPUFlag::Sign),
             Self::OVERFLOW => Ok(CPUFlag::Overflow),
-            _ => Err(CPUError::InvalidInstruction(byte))
+            _ => Err(CPUError::InvalidFlag(byte))
         }
     }
 }
 
 
-/// Represents the amount of general registers in the processor
+/// Represents the amount of general-purpose registers in the CPU
 pub const GEN_REG_COUNT: usize = 8;
 
-/// Represents the type of the general registers
-pub type RegType = i64;
+/// Represents the index of special accumulator register
+pub const ACCU_IDX: usize = GEN_REG_COUNT;
 
-/// Represents the type of the immediate value
-pub type ImmType = RegType;
+/// Represents the total amount of registers in the CPU
+/// - [`GEN_REG_COUNT`] general-purpose
+/// - 1 special accumulator
+pub const REG_COUNT: usize = GEN_REG_COUNT + 1;
 
-/// Represents the type of the float value
-pub type FloatType = f64;
-
-/// Represents the address of the first instruction for the CPU
-pub const CPU_START_ADDR: RamAddr = RamAddr(0x0_usize);
-
-/// Represents the amount of bytes 1 cpu instruction takes
+/// Represents the amount of bytes 1 CPU instruction takes
 pub const INSTRUCTION_SIZE: usize = 1;
-
-/// Represents the amount of bytes 1 memory address takes
-pub const MEMORY_ADDRESS_SIZE: usize = 8;
-
-/// Represents the amount of bytes 1 register takes
-pub const REGISTER_SIZE: usize = 1;
 
 /// Represents the amount of bytes 1 operand type takes
 pub const OPERAND_TYPE_SIZE: usize = 1;
 
+/// Represents the amount of bytes 1 memory address takes
+pub const MEMORY_ADDRESS_SIZE: usize = 8;
+
+/// Represents the amount of bytes 1 register number takes
+pub const REG_NUM_SIZE: usize = 1;
+
 /// Represents the amount of bytes 1 flag takes
 pub const FLAG_TYPE_SIZE: usize = 1;
 
-/// Represents the amount of bytes 1 immediate value takes
+/// Represents the amount of bytes 1 immediate value takes \
+/// All immediate values are 8 bytes, but their bytes can be interpreted as float, i64, u64, etc.
 pub const IMMEDIATE_VALUE_SIZE: usize = 8;
 
 
@@ -327,11 +373,9 @@ pub const IMMEDIATE_VALUE_SIZE: usize = 8;
 pub struct CPU {
     pub ram: RAM,
 
-    /// 8 general-purpose i64 registers
-    general_reg: [RegType; GEN_REG_COUNT],
-
-    /// Special register which stores the result of the operations
-    accu_reg: RegType,
+    /// - 8 general-purpose 8-byte registers
+    /// - 1 special accumulator register
+    registers: [RegType; REG_COUNT],
 
     /// Special register which temporarily stores the current instruction
     instr_reg: CPUInstr,
@@ -359,13 +403,16 @@ pub struct CPU {
 
 /// Main CPU methods
 impl CPU {
+
+    /// Represents the address of the first instruction for the CPU
+    pub const START_ADDR: RamAddr = RamAddr(0x0_usize);
+
     pub fn new(ram: RAM) -> Self {
         Self {
             ram,
-            general_reg: [0 as RegType; GEN_REG_COUNT],
-            accu_reg: 0 as RegType,
+            registers: [0 as RegType; REG_COUNT],
             instr_reg: CPUInstr::Halt,
-            prog_counter: Some(CPU_START_ADDR),
+            prog_counter: Some(CPU::START_ADDR),
             zero_flag: false,
             sign_flag: false,
             overflow_flag: false,
@@ -388,47 +435,73 @@ impl CPU {
         let mut pc = self.prog_counter.unwrap();
 
         // Fetch the byte at program counter address
-        let instr_byte = self.fetch_byte_at_addr(pc)?;
+        let instr_byte = self.ram.at(pc)?;
 
         // Convert the byte representing the instruction to CPUInstr
-        self.instr_reg = CPUInstr::from_byte(instr_byte.0)?;
+        self.instr_reg = CPUInstr::from_byte(instr_byte)?;
 
         // Increment the program counter
         pc.inc(INSTRUCTION_SIZE)?;
         self.set_program_counter(pc);
 
         let res = match self.instr_reg {
-            CPUInstr::Halt => self.execute_halt(),
-            CPUInstr::Set => self.execute_set(),
-            CPUInstr::Add => self.execute_add(),
-            CPUInstr::Sub => self.execute_sub(),
-            CPUInstr::Mul => self.execute_mul(),
-            CPUInstr::Mod => self.execute_mod(),
-            CPUInstr::Div => self.execute_div(),
-            CPUInstr::FAdd => self.execute_fadd(),
-            CPUInstr::FSub => self.execute_fsub(),
-            CPUInstr::FMul => self.execute_fmul(),
-            CPUInstr::FDiv => self.execute_fdiv(),
-            CPUInstr::And => self.execute_and(),
-            CPUInstr::Or => self.execute_or(),
-            CPUInstr::Xor => self.execute_xor(),
-            CPUInstr::Not => self.execute_not(),
-            CPUInstr::BitwiseAnd => self.execute_b_and(),
-            CPUInstr::BitwiseOr => self.execute_b_or(),
-            CPUInstr::BitwiseXor => self.execute_b_xor(),
-            CPUInstr::BitwiseNot => self.execute_b_not(),
-            CPUInstr::Shl => self.execute_shl(),
-            CPUInstr::Shr => self.execute_shr(),
-            CPUInstr::Jump => self.execute_jump(),
-            CPUInstr::JumpIf => self.execute_jump_if(),
-            CPUInstr::JumpIfNot => self.execute_jump_if_not(),
-            CPUInstr::JumpIfGreater => self.execute_jump_if_greater(),
-            CPUInstr::JumpIfLess => self.execute_jump_if_less(),
-            CPUInstr::JumpIfEqual => self.execute_jump_if_equal(),
+            CPUInstr::Halt => {}
+            CPUInstr::Set => {}
+            CPUInstr::UAdd => {}
+            CPUInstr::USub => {}
+            CPUInstr::UMul => {}
+            CPUInstr::UMod => {}
+            CPUInstr::UDiv => {}
+            CPUInstr::UOr => {}
+            CPUInstr::UXor => {}
+            CPUInstr::UAnd => {}
+            CPUInstr::UNot => {}
+            CPUInstr::UShl => {}
+            CPUInstr::UShr => {}
+            CPUInstr::IAdd => {}
+            CPUInstr::ISub => {}
+            CPUInstr::IMul => {}
+            CPUInstr::IMod => {}
+            CPUInstr::IDiv => {}
+            CPUInstr::IOr => {}
+            CPUInstr::IXor => {}
+            CPUInstr::IAnd => {}
+            CPUInstr::INot => {}
+            CPUInstr::IShl => {}
+            CPUInstr::IShr => {}
+            CPUInstr::FAdd => {}
+            CPUInstr::FSub => {}
+            CPUInstr::FMul => {}
+            CPUInstr::FDiv => {}
+            CPUInstr::LOr => {}
+            CPUInstr::LXor => {}
+            CPUInstr::LAnd => {}
+            CPUInstr::LNot => {}
+            CPUInstr::Jump => {}
+            CPUInstr::JumpIf => {}
+            CPUInstr::JumpIfNot => {}
+            CPUInstr::UEqual => {}
+            CPUInstr::UGreater => {}
+            CPUInstr::UGreaterEqual => {}
+            CPUInstr::ULess => {}
+            CPUInstr::ULessEqual => {}
+            CPUInstr::IEqual => {}
+            CPUInstr::IGreater => {}
+            CPUInstr::IGreaterEqual => {}
+            CPUInstr::ILess => {}
+            CPUInstr::ILessEqual => {}
+            CPUInstr::FEqual => {}
+            CPUInstr::FGreater => {}
+            CPUInstr::FGreaterEqual => {}
+            CPUInstr::FLess => {}
+            CPUInstr::FLessEqual => {}
+            CPUInstr::Syscall => {}
         };
 
         self.inc_instruction_counter();
-        res
+
+        Ok(())
+        // res
     }
 
     /// At the moment only exists for debugging purposes, might delete later
@@ -442,496 +515,251 @@ impl CPU {
 
 /** Main CPU instruction methods */
 impl CPU {
-    /// Halts instruction
-    /// Sets the program counter to `None`
-    fn execute_halt(&mut self) -> Result<(), ErrorType> {
-        self.halt_program_counter();
-        Ok(())
-    }
 
-    /// Set instruction
-    fn execute_set(&mut self) -> Result<(), ErrorType> {
-        let to_set_type = self.read_operand_type()?;
-        let mut pc = self.prog_counter.unwrap();
-
-        match to_set_type {
-            OperandType::MemoryAddress => {
-                let to_set = self.fetch_mem_addr(pc)?;
-                pc.inc(MEMORY_ADDRESS_SIZE)?;
-                self.set_program_counter(pc);
-                let value = self.read_operand_value()? as u8;
-                self.ram.write_byte(to_set, value)?;
-                Ok(())
-            }
-            OperandType::Register => {
-                let to_set = self.fetch_reg_number(pc)?;
-                pc.inc(REGISTER_SIZE)?;
-                self.set_program_counter(pc);
-                let value = self.read_operand_value()?;
-                self.set_reg(to_set, value)?;
-                Ok(())
-            }
-            OperandType::Flag => {
-                let to_set = self.fetch_flag_number(pc)?;
-                pc.inc(FLAG_TYPE_SIZE)?;
-                self.set_program_counter(pc);
-                let value = self.read_operand_value()? != 0;
-                self.set_flag(CPUFlag::from_byte(to_set)?, value);
-                Ok(())
-            }
-            OperandType::Immediate => {
-                Err(CPUError::OperandTypeNotAllowed(to_set_type).into())
-            }
-        }
-    }
-
-    /// Add instruction
-    fn execute_add(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| x.overflowing_add(y))
-    }
-
-    /// Sub instruction
-    fn execute_sub(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| x.overflowing_sub(y))
-    }
-
-    /// Mul instruction
-    fn execute_mul(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| x.overflowing_mul(y))
-    }
-
-    /// Mod instruction
-    fn execute_mod(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| (x % y, false)) // Modulo does not overflow
-    }
-
-    /// Div instruction
-    fn execute_div(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| x.overflowing_div(y))
-    }
-
-    /// FAdd instruction
-    fn execute_fadd(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_float_operator(|x, y| x + y)
-    }
-
-    /// FSub instruction
-    fn execute_fsub(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_float_operator(|x, y| x - y)
-    }
-
-    /// FMul instruction
-    fn execute_fmul(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_float_operator(|x, y| x * y)
-    }
-
-    /// FDiv instruction
-    fn execute_fdiv(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_float_operator(|x, y| x / y)
-    }
-
-    /// Logical And instruction
-    fn execute_and(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_log_operator(|x, y| (x != 0) && (y != 0))
-    }
-
-    /// Logical Or instruction
-    fn execute_or(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_log_operator(|x, y| (x != 0) || (y != 0))
-    }
-
-    /// Logical Xor instruction
-    fn execute_xor(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_log_operator(|x, y| (x != 0) ^ (y != 0))
-    }
-
-    /// Logical Not instruction
-    fn execute_not(&mut self) -> Result<(), ErrorType> {
-        self.execute_un_log_operator(|x| !(x != 0))
-    }
-
-    /// Bitwise And instruction
-    fn execute_b_and(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| (x.bitand(y), false))
-    }
-
-    /// Bitwise Or instruction
-    fn execute_b_or(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| (x.bitor(y), false))
-    }
-
-    /// Bitwise Xor instruction
-    fn execute_b_xor(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| (x.bitxor(y), false))
-    }
-
-    /// Bitwise Not instruction
-    fn execute_b_not(&mut self) -> Result<(), ErrorType> {
-        self.execute_un_operator(|x| !x)
-    }
-
-    /// Shl (Shift Left) instruction
-    fn execute_shl(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| x.overflowing_shl(y as u32))
-    }
-
-    /// Shr (Shift Right) instruction
-    fn execute_shr(&mut self) -> Result<(), ErrorType> {
-        self.execute_bin_operator(|x, y| x.overflowing_shr(y as u32))
-    }
-
-    /// Jump instruction
-    fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let _ = self.read_operand_type()?; // Read but omit the byte indicating memory address
-        let addr = self.fetch_mem_addr(self.prog_counter.unwrap())?;
-        self.set_program_counter(addr);
-        Ok(())
-    }
-
-    // JumpIf instruction
-    fn execute_jump_if(&mut self) -> Result<(), ErrorType> {
-        self.execute_one_arg_conditional_jump(|x| (x != 0) == true)
-    }
-
-    // JumpIfNot instruction
-    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> {
-        self.execute_one_arg_conditional_jump(|x| (x == 0) == true)
-    }
-
-    // JumpIfGreater instruction
-    fn execute_jump_if_greater(&mut self) -> Result<(), ErrorType> {
-        self.execute_two_arg_conditional_jump(|x, y| x > y)
-    }
-
-    // JumpIfLess instruction
-    fn execute_jump_if_less(&mut self) -> Result<(), ErrorType> {
-        self.execute_two_arg_conditional_jump(|x, y| x < y)
-    }
-
-    // JumpIfEqual instruction
-    fn execute_jump_if_equal(&mut self) -> Result<(), ErrorType> {
-        self.execute_two_arg_conditional_jump(|x, y| x == y)
-    }
 }
 
 
-/** General helper methods for CPU instructions */
+/** This section contains methods for operations with integers */
 impl CPU {
-    /// Executes a binary operator. (operator with two arguments) \
-    /// Accepts only overflowing operator which return `(RegType, bool)`. Second parameter is `true`
-    /// if the operator overflowed
+    /// Executes an **Arithmetic**, **Binary** (two arguments) operator.
+    /// ## Usage
+    /// The argument function is `(T, T) -> (T, bool)`, where `T` is `Reinterpret64 + SignClassifiable` \
+    /// `bool` value in the returned tuple indicates whether the operator overflowed
+    /// so the right flags can be set. \
+    /// An example of `F` is
+    /// ```rust
+    /// |x, y| x.overflowing_add(y) // overflowing_add returns (Self, bool)
+    /// ```
+    /// In case of floating-point operators, for example, an addition, one should pass
+    /// ```rust
+    /// |x, y| (x + y, false) // overflow is always false
+    /// ```
+    /// Since Rust handles floating-point overflow in a different way, this method will
+    /// internally check if the result is infinite (this means that the operator overflowed) and
+    /// set according flags, so no need for `F` to return the overflow state
+    ///
+    /// ## Flags and registers
+    /// This method:
     /// - Assigns the Accumulator register to the result of the operation
-    /// - Sets the `Overflow` flag if the operation overflows.
-    /// - Sets the `Zero` flag if the result  is zero.
+    /// - Sets the `Overflow` flag if the operator overflowed.
+    /// - Sets the `Zero` flag if the result is zero.
     /// - Sets the `Sign` flag if the result is negative.
-    fn execute_bin_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
+    fn binary_arith_op<T, F>(&mut self, op: F) -> Result<(), ErrorType>
     where
-        F: Fn(RegType, RegType) -> (RegType, bool),
+        T: Reinterpret64 + SignClassifiable,
+        F: Fn(T, T) -> (T, bool)
     {
-        let lhs = self.read_operand_value()?;
-        let rhs = self.read_operand_value()?;
+        let lhs = self.extract_operand()?.reinterpret();
+        let rhs = self.extract_operand()?.reinterpret();
 
         let (result, overflowed) = op(lhs, rhs);
-
-        // Reset the flags before setting them so that they represent the result
-        // of the latest arithmetic operation
-        self.reset_flags();
-
-        // If the operation overflowed, set the Overflow flag
-        if overflowed {
-            self.enable_flag(CPUFlag::Overflow);
-        }
-
-        // If the result is negative, set the Sign flag
-        if result.is_negative() {
-            self.enable_flag(CPUFlag::Sign);
-        }
-
-        // If the result is zero, set the zero flag
-        if result == 0 {
-            self.enable_flag(CPUFlag::Zero);
-        }
-
-        self.set_accu_reg(result);
-
+        self.set_arith_result_flags(result, overflowed);
         Ok(())
     }
 
-    /// Executes a unary operator. (operator with one argument) \
-    ///  Accepts a function - the operation itself which returns `RegType`
+    /// Executes an **Arithmetic**, **Unary** (one argument) operator.
+    /// ## Usage
+    /// The argument function is `(T) -> (T, bool)`, where `T` is `Reinterpret64 + SignClassifiable` \
+    /// `bool` value in the returned tuple indicates whether the operator overflowed
+    /// so the right flags can be set. \
+    /// An example of `F` is
+    /// ```rust
+    /// |x| x.overflowing_neg() // overflowing_neg returns (Self, bool)
+    /// ```
+    /// In case of floating-point operators, for example, an addition, one should pass
+    /// ```rust
+    /// |x| (-x, false) // overflow is always false
+    /// ```
+    /// Since Rust handles floating-point overflow in a different way, this method will
+    /// internally check if the result is infinite (this means that the operator overflowed) and
+    /// set according flags, so no need for `F` to return the overflow state
+    ///
+    /// ## Flags and registers
+    /// This method:
     /// - Assigns the Accumulator register to the result of the operation
-    /// - Sets the `Zero` flag if the result  is zero.
+    /// - Sets the `Overflow` flag if the operator overflowed.
+    /// - Sets the `Zero` flag if the result is zero.
     /// - Sets the `Sign` flag if the result is negative.
-    fn execute_un_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
+    fn unary_arith_op<T, F>(&mut self, op: F) -> Result<(), ErrorType>
     where
-        F: Fn(RegType) -> RegType,
+        T: Reinterpret64 + SignClassifiable,
+        F: Fn(T) -> (T, bool)
     {
-        let lhs = self.read_operand_value()?;
+        let lhs = self.extract_operand()?.reinterpret();
+        let (result, overflowed) = op(lhs);
+        self.set_arith_result_flags(result, overflowed);
+        Ok(())
+    }
 
-        let result = op(lhs);
 
+    /// Executes a **Logical**, **Binary** (two arguments) operator.
+    /// ## Usage
+    /// The argument function is `(bool, bool) -> bool` \
+    /// An example of `F` is
+    /// ```rust
+    /// |x, y| x && y // logical AND operator
+    /// ```
+    /// ## Flags and registers
+    /// This method:
+    /// - Assigns the Accumulator register to the result of the operation
+    /// - Sets the `Zero` flag if the result is `false`.
+    /// - Does **not** set the `Overflow` flag since logical operators operate on `bool`-s and cannot
+    /// overflow
+    fn binary_logical_op<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        F: Fn(bool, bool) -> bool
+    {
+        let lhs = self.extract_operand()?.as_bool();
+        let rhs = self.extract_operand()?.as_bool();
+        let result = op(lhs, rhs);
+        self.set_logical_result_flags(result);
+        Ok(())
+    }
+
+
+
+    /// Helper method. Sets flags according to an arithmetic operator result
+    /// - Sets the `Overflow` flag if overflowed is `true` is `result` is infinite (this means
+    /// [`Float64`] operator overflowed).
+    /// - Sets the `Zero` flag if `result` is zero.
+    /// - Sets the `Sign` flag if `result` is negative.
+    fn set_arith_result_flags<T>(&mut self, result: T, overflowed: bool)
+    where T: Reinterpret64 + SignClassifiable
+    {
         // Reset the flags before setting them so that they represent the result
-        // of the latest arithmetic operation
+        // of the latest operation
         self.reset_flags();
 
+        // If the operation overflowed, set the Overflow flag
+        if overflowed || result.is_infinite() {
+            self.enable_flag(CPUFlag::Overflow);
+        }
+
+        // If the operation overflowed, set the Overflow flag
         // If the result is negative, set the Sign flag
         if result.is_negative() {
             self.enable_flag(CPUFlag::Sign);
         }
 
         // If the result is zero, set the zero flag
-        if result == 0 {
+        if result.is_zero() {
             self.enable_flag(CPUFlag::Zero);
         }
 
-        self.set_accu_reg(result);
-
-        Ok(())
+        self.set_accu_reg(result.reinterpret());
     }
 
-
-    fn execute_bin_float_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
-    where
-        F: Fn(FloatType, FloatType) -> FloatType,
+    /// Helper method. Sets flags according to a logical operator result
+    /// - Sets the `Zero` flag if `result` is `false`.
+    fn set_logical_result_flags(&mut self, result: bool)
     {
-        let lhs = imm_as_float(self.read_operand_value()?);
-        let rhs = imm_as_float(self.read_operand_value()?);
-
-        let result = op(lhs, rhs);
-
         // Reset the flags before setting them so that they represent the result
-        // of the latest arithmetic operation
+        // of the latest operation
         self.reset_flags();
 
-        // If the operation overflowed, set the Overflow flag
-        if result.is_finite() {
-            self.enable_flag(CPUFlag::Overflow);
-        }
-
-        // If the result is negative, set the Sign flag
-        if result.is_sign_negative() {
-            self.enable_flag(CPUFlag::Sign);
-        }
-
-        // If the result is zero, set the zero flag
-        if result == 0.0 {
-            self.enable_flag(CPUFlag::Zero);
-        }
-
-        self.set_accu_reg(float_as_imm(result));
-
-        Ok(())
-    }
-
-
-    /// Executes a logical binary operator. (logical operator with two arguments) \
-    /// Accepts a function - the operation itself which returns `bool`
-    /// - Assigns the Accumulator register to the result of the operation
-    /// - Sets the `Zero` flag if the result is `false`.
-    fn execute_bin_log_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
-    where
-        F: Fn(RegType, RegType) -> bool,
-    {
-        let lhs = self.read_operand_value()?;
-        let rhs = self.read_operand_value()?;
-
-        let result = op(lhs, rhs);
-
-        // Reset the flags before setting them so that they represent the result
-        // of the latest arithmetic operation
-        self.disable_flag(CPUFlag::Overflow);
-        self.disable_flag(CPUFlag::Sign);
-        self.disable_flag(CPUFlag::Zero);
-
-        // If the result is `false`, set the Zero flag
         if result == false {
             self.enable_flag(CPUFlag::Zero);
-        }
-
-        self.set_accu_reg(result as RegType);
-
-        Ok(())
-    }
-
-    /// Executes a logical unary operator. (logical operator with one argument) \
-    ///  Accepts a function - the operation itself which returns `RegType`
-    /// - Assigns the Accumulator register to the result of the operation
-    /// - Sets the `Zero` flag if the result is `false`.
-    fn execute_un_log_operator<F>(&mut self, op: F) -> Result<(), ErrorType>
-    where
-        F: Fn(RegType) -> bool,
-    {
-        let lhs = self.read_operand_value()?;
-
-        let result = op(lhs);
-
-        // Reset the flags before setting them so that they represent the result
-        // of the latest arithmetic operation
-        self.reset_flags();
-
-        // If the result is zero, set the zero flag
-        if result == false {
-            self.enable_flag(CPUFlag::Zero);
-        }
-
-        self.set_accu_reg(result as RegType);
-
-        Ok(())
-    }
-
-
-    /// Jump if the argument function which takes one argument and returns `bool` \
-    /// returns `true`
-    fn execute_one_arg_conditional_jump<F>(&mut self, op: F) -> Result<(), ErrorType>
-    where
-        F: Fn(RegType) -> bool,
-    {
-        let value = self.read_operand_value()?;
-        let _ = self.read_operand_type()?; // Read but omit the byte indicating memory address
-
-        let mut pc = self.prog_counter.unwrap();
-
-        let addr = self.fetch_mem_addr(pc)?;
-        pc.inc(MEMORY_ADDRESS_SIZE)?;
-
-        if op(value) {
-            self.set_program_counter(addr);
+            self.set_accu_reg(1); // `true` is implicitly converted to `1`
         } else {
-            self.set_program_counter(pc)
+            self.set_accu_reg(0); // `false` is implicitly converted to `0`
         }
-
-        Ok(())
-    }
-
-    /// Jump if the argument function which takes two arguments and returns `bool` \
-    /// returns `true`
-    fn execute_two_arg_conditional_jump<F>(&mut self, op: F) -> Result<(), ErrorType>
-    where
-        F: Fn(RegType, RegType) -> bool,
-    {
-        let value1 = self.read_operand_value()?;
-        let value2 = self.read_operand_value()?;
-        let _ = self.read_operand_type()?; // Read but omit the byte indicating memory address
-
-        let mut pc = self.prog_counter.unwrap();
-        let addr = self.fetch_mem_addr(self.prog_counter.unwrap())?;
-
-        pc.inc(MEMORY_ADDRESS_SIZE)?;
-
-        if op(value1, value2) {
-            self.set_program_counter(addr);
-        } else {
-            self.set_program_counter(pc);
-        }
-
-        Ok(())
     }
 }
 
 
 /** Helper methods for reading different types of operands */
 impl CPU {
-    /// This method gets the value from the operand. It
-    /// 1. Retrieves the operand type
-    /// 2. Based on what operand type is given to it, it reads the underlying value
-    /// For example, if the operand type is [`OperandType::MemoryAddress`], it will read the byte
-    /// at that memory address and return it. \
-    /// - The return data is represented in [`ImmType`]
-    /// - Automatically increments the program counter.
-    fn read_operand_value(&mut self) -> Result<ImmType, ErrorType> {
-        let operand = self.read_operand_type()?;
-        match operand {
-            OperandType::MemoryAddress => {
-                let value = self.fetch_value_from_mem_addr(self.prog_counter.unwrap())?;
-                self.inc_prog_counter(MEMORY_ADDRESS_SIZE);
-                Ok(value)
-            }
-            OperandType::Register => {
-                let value = self.fetch_value_from_reg(self.prog_counter.unwrap())?;
-                self.inc_prog_counter(REGISTER_SIZE);
-                Ok(value)
-            }
-            OperandType::Flag => {
-                let value = self.fetch_value_from_flag(self.prog_counter.unwrap())?.as_byte() as RegType;
-                self.inc_prog_counter(FLAG_TYPE_SIZE);
-                Ok(value)
-            }
-            OperandType::Immediate => {
-                let value = self.fetch_imm(self.prog_counter.unwrap())?;
-                self.inc_prog_counter(IMMEDIATE_VALUE_SIZE);
-                Ok(value)
-            }
-        }
+    /** Reading methods */
+    /// Extracts the next operand value \
+    /// This method operates in the following way: \
+    /// It first reads an operand type.
+    /// - If the operand type is a RAM address, the methods extracts the value at that address. ([`RamUnit`])
+    /// - If the operand type is a register, the method extracts the value of that register ([`RegType`])
+    /// - If the operand type is a flag, the method extracts the value of that flag (`bool`)
+    /// - If the operand type is an immediate value, the method extracts that value ([`EightBytes`])
+    ///
+    /// Then, the value is reinterpreted as [`EightBytes`] and returned
+    fn extract_operand(&mut self) -> Result<EightBytes, ErrorType> {
+        let result: EightBytes = match self.read_operand_type()? {
+            OperandType::MemoryAddress => self.read_and_extract_addr()?.reinterpret(),
+            OperandType::Register => self.read_and_extract_reg()?.reinterpret(),
+            OperandType::Flag => self.read_and_extract_flag()?.reinterpret(),
+            OperandType::Immediate => self.read_immediate()?
+        };
+
+        Ok(result)
     }
 
-    /// Fetches the operand type byte returns the [`OperandType`] enum wrapper of it \
-    /// Automatically increments the program counter
-    fn read_operand_type(&mut self) -> Result<OperandType, ErrorType> {
-        // The program counter is guaranteed not to be `None`, so we can unwrap it
-        let mut pc = self.get_program_counter().unwrap();
-
-        // Read the operand type byte (as u8)
-        let operand_type_byte = self.fetch_byte_at_addr(pc)?.0;
-
-        // Convert the operand type byte to the wrapper enum
-        let operand_type = OperandType::from_byte(operand_type_byte)?;
-
-        // Increment the program counter
-        pc.inc(OPERAND_TYPE_SIZE)?;
-
-        self.set_program_counter(pc);
-
-        Ok(operand_type)
+    /// Reads the next 8 bytes, interprets them as a ram address ([`RamAddr`]), extracts the value at that
+    /// RAM address and returns it
+    /// - Increments the program counter
+    fn read_and_extract_addr(&mut self) -> Result<RamUnit, ErrorType> {
+        let addr = self.read_addr()?;
+        let extracted = self.ram.at(addr)?;
+        Ok(extracted)
     }
 
-    /** Fetching methods */
-    /// Fetch the value in RAM at the specified address
-    fn fetch_byte_at_addr(&self, addr: RamAddr) -> Result<&RamUnit, ErrorType> {
-        Ok(self.ram.at(addr)?)
+    /// Reads the next 8 bytes, interprets them as a register number (`usize`), extracts
+    /// the value at that RAM address and returns it as [`RegType`]
+    /// - Increments the program counter
+    fn read_and_extract_reg(&mut self) -> Result<RegType, ErrorType> {
+        let num = self.read_reg()?;
+        let extracted = self.get_reg(num)?;
+        Ok(extracted)
     }
 
-    /// Gets the register number from the address and returns the value at that register
-    fn fetch_value_from_reg(&self, addr: RamAddr) -> Result<ImmType, ErrorType> {
-        let reg_number: usize = self.fetch_reg_number(addr)?;
-        if reg_number == GEN_REG_COUNT { // The 9-th register is the accumulator register
-            Ok(self.get_accu_reg())
-        } else {
-            Ok(self.get_reg(reg_number)?)
-        }
+    /// Reads the next 1 byte, interprets it as CPU flag [`CPUFlag`], extracts
+    /// the value of that flag and returns it as `bool`
+    /// - Increments the program counter
+    fn read_and_extract_flag(&mut self) -> Result<bool, ErrorType> {
+        let flag = self.read_flag()?;
+        let extracted = self.get_flag(flag);
+        Ok(extracted)
     }
 
-    /// Reads a memory address from address and returns the value at that memory address
-    fn fetch_value_from_mem_addr(&self, addr: RamAddr) -> Result<RegType, ErrorType> {
-        let mem_addr = self.fetch_mem_addr(addr)?;
-        let val = self.ram.at(mem_addr)?;
-        Ok(val.0 as RegType)
+    /// Reads the next 8 bytes and returns it as [`RamAddr`].
+    /// - Increments the program counter
+    fn read_addr(&mut self) -> Result<RamAddr, ErrorType> {
+        let bytes = self.ram.read_bytes::<8>(self.prog_counter.unwrap())?;
+        let addr = RamAddr(Unsigned64::from_le_bytes(bytes) as usize);
+        self.inc_prog_counter(MEMORY_ADDRESS_SIZE)?;
+        Ok(addr)
     }
 
-    /// Reads a flag number from the address and returns a [`CPUFlag`] based on it
-    fn fetch_value_from_flag(&self, addr: RamAddr) -> Result<CPUFlag, ErrorType> {
-        let flag_number = self.fetch_flag_number(addr)?;
-        Ok(CPUFlag::from_byte(flag_number)?)
+    /// Reads the next 8 bytes and returns it as `usize` (the register number).
+    /// - Increments the program counter
+    fn read_reg(&mut self) -> Result<usize, ErrorType> {
+        let bytes = self.ram.read_bytes::<8>(self.prog_counter.unwrap())?;
+        let num = Unsigned64::from_le_bytes(bytes) as usize;
+        self.inc_prog_counter(REG_NUM_SIZE)?;
+        Ok(num)
     }
 
-    /// Reads an immediate value and returns it as [`ImmType`]
-    fn fetch_imm(&self, addr: RamAddr) -> Result<ImmType, ErrorType> {
-        let value = self.ram.read_i64(addr)?;
+    /// Reads the next 1 byte and returns it as [`CPUFlag`]
+    /// - Increments the program counter
+    fn read_flag(&mut self) -> Result<CPUFlag, ErrorType> {
+        let byte = self.ram.read_byte(self.prog_counter.unwrap())?;
+        let flag = CPUFlag::from_byte(byte)?;
+        self.inc_prog_counter(FLAG_TYPE_SIZE)?;
+        Ok(flag)
+    }
+
+    /// Reads the next 8 bytes and returns it as [`EightBytes`]
+    /// - Increments the program counter
+    fn read_immediate(&mut self) -> Result<EightBytes, ErrorType> {
+        let bytes = self.ram.read_bytes::<8>(self.prog_counter.unwrap())?;
+        let value: EightBytes = EightBytes::from_le_bytes(bytes);
+        self.inc_prog_counter(IMMEDIATE_VALUE_SIZE)?;
         Ok(value)
     }
 
-    /// Reads a register number from `addr`
-    fn fetch_reg_number(&self, addr: RamAddr) -> Result<usize, ErrorType> {
-        Ok(self.fetch_byte_at_addr(addr)?.0 as usize)
-    }
-
-    /// Reads a memory address from `addr`
-    fn fetch_mem_addr(&self, addr: RamAddr) -> Result<RamAddr, ErrorType> {
-        Ok(RamAddr(self.ram.read_u64(addr)? as usize))
-    }
-
-    /// Reads a flag number (u8, not a `CPUFlag`) from `addr`
-    fn fetch_flag_number(&self, addr: RamAddr) -> Result<u8, ErrorType> {
-        Ok(self.fetch_byte_at_addr(addr)?.0)
+    /// Reads the next 1 byte and returns it as [`OperandType`]
+    /// - Increments the program counter
+    fn read_operand_type(&mut self) -> Result<OperandType, ErrorType> {
+        let operand_type_byte = self.ram.at(self.prog_counter.unwrap())?;
+        let operand_type = OperandType::from_byte(operand_type_byte)?;
+        self.inc_prog_counter(OPERAND_TYPE_SIZE)?;
+        Ok(operand_type)
     }
 }
 
@@ -959,9 +787,10 @@ impl CPU {
     }
 
     /// Increments program counter by a value
-    pub fn inc_prog_counter(&mut self, val: usize) {
+    pub fn inc_prog_counter(&mut self, val: usize) -> Result<(), ErrorType> {
         if let Some(counter) = &mut self.prog_counter {
-            let _ = counter.inc(val); // TODO: use the Result
+            counter.inc(val)?;
+            Ok(())
         } else {
             panic!("Attempt to increment program counter in a halted state")
         }
@@ -973,8 +802,8 @@ impl CPU {
 impl CPU {
     /// Returns the value of the `n`-th register if it exists, Error otherwise
     pub fn get_reg(&self, n: usize) -> Result<RegType, CPUError> {
-        if n < GEN_REG_COUNT {
-            Ok(self.general_reg[n])
+        if n < REG_COUNT {
+            Ok(self.registers[n])
         } else {
             Err(CPUError::InvalidRegister(n))
         }
@@ -982,8 +811,8 @@ impl CPU {
 
     /// Sets the value of `n`-th register to `val` if it exists, Error otherwise
     pub fn set_reg(&mut self, n: usize, val: RegType) -> Result<(), CPUError> {
-        if n < GEN_REG_COUNT {
-            self.general_reg[n] = val;
+        if n < REG_COUNT {
+            self.registers[n] = val;
             Ok(())
         } else {
             Err(CPUError::InvalidRegister(n))
@@ -992,12 +821,12 @@ impl CPU {
 
     /// Returns the value of the special accumulator register
     pub fn get_accu_reg(&self) -> RegType {
-        self.accu_reg
+        self.get_reg(ACCU_IDX).unwrap()
     }
 
     /// Sets the value of the special accumulator register to `val`
     pub fn set_accu_reg(&mut self, val: RegType) {
-        self.accu_reg = val;
+        self.set_reg(ACCU_IDX, val).unwrap()
     }
 }
 
@@ -1061,7 +890,7 @@ impl CPU {
         for chunk  in self.ram.mem.chunks(16) {
             let mut s = String::new();
             for i in chunk {
-                s.push_str(i.0.to_string().as_str());
+                s.push_str(i.to_string().as_str());
                 s.push(' ');
             }
             println!("{}", s);
@@ -1089,17 +918,3 @@ impl CPU {
     }
 }
 
-
-/// Helper function.
-/// Converts [`ImmType`] to [`FloatType`] using the raw bytes. Basically, converts the integer
-/// to raw bytes and reinterprets them as float
-pub const fn imm_as_float(val: ImmType) -> FloatType {
-    FloatType::from_le_bytes(val.to_le_bytes())
-}
-
-/// Helper function
-/// Converts [`FloatType`] to [`ImmType`] using the raw bytes. Basically, converts the integer
-/// to raw bytes and reinterprets them as float
-pub const fn float_as_imm(val: FloatType) -> ImmType {
-    ImmType::from_le_bytes(val.to_le_bytes())
-}
