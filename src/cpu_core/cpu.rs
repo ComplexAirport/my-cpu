@@ -386,9 +386,6 @@ pub struct CPU {
     /// Set when an operation results in zero
     zero_flag: bool,
 
-    /// Set when an arithmetic operation produces a carry-out (or borrow for subtraction)
-    // carry_flag: bool,
-
     /// Indicates whether the result of an operation is negative (based on the most significant bit)
     sign_flag: bool,
 
@@ -492,11 +489,11 @@ impl CPU {
             CPUInstr::ILessEqual => self.execute_i_less_equal(),
             CPUInstr::FEqual => self.execute_f_equal(),
             CPUInstr::FGreater => self.execute_f_greater(),
-            CPUInstr::FGreaterEqual => self.execute_u_greater_equal(),
+            CPUInstr::FGreaterEqual => self.execute_f_greater_equal(),
             CPUInstr::FLess => self.execute_f_less(),
             CPUInstr::FLessEqual => self.execute_f_less_equal(),
             CPUInstr::Syscall => self.execute_syscall(),
-            
+
         };
 
         self.inc_instruction_counter();
@@ -517,79 +514,171 @@ impl CPU {
 Most of the instruction call helper methods instead of operating directly
 */
 impl CPU {
-    fn execute_halt(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    fn execute_set(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
-    fn execute_u_add(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_sub(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_mul(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_mod(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_div(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    fn execute_u_or(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_xor(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_and(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_not(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    fn execute_u_shl(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_shr(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
-    fn execute_i_add(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_sub(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_mul(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_mod(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_div(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    fn execute_i_or(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_xor(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_and(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_not(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    fn execute_i_shl(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_shr(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
-    fn execute_f_add(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_sub(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_mul(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_div(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
-    fn execute_l_or(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_l_xor(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_l_and(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_l_not(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
+    fn execute_halt(&mut self) -> Result<(), ErrorType> {
+        self.halt_program_counter();
+        Ok(())
+    }
+
+    fn execute_set(&mut self) -> Result<(), ErrorType> {
+        let operand_type = self.read_operand_type()?;
+        match operand_type {
+            OperandType::MemoryAddress => {
+                let to_set = self.read_addr()?;
+                let value: SingleByte = self.extract_operand()?.reinterpret();
+                self.ram.write_byte(to_set, value)?;
+            }
+            OperandType::Register => {
+                let to_set = self.read_reg()?;
+                let value: RegType = self.extract_operand()?.reinterpret();
+                self.set_reg(to_set, value)?;
+            }
+            OperandType::Flag => {
+                let to_set = self.read_flag()?;
+                let value: bool = self.extract_operand()?.as_bool();
+                self.set_flag(to_set, value);
+            }
+            OperandType::Immediate => {
+                return Err(CPUError::OperandTypeNotAllowed(operand_type).into());
+            }
+        }
+        Ok(())
+    }
+
+
+    fn execute_u_add(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_add(y))
+    }
+    fn execute_u_sub(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_sub(y))
+    }
+    fn execute_u_mul(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_mul(y))
+    }
+    fn execute_u_mod(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x % y, false)) // Modulo cannot overflow
+    }
+    fn execute_u_div(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_div(y))
+    }
+
+    fn execute_u_or(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x.bitor(y), false)) // Bitwise OR cannot overflow
+    }
+    fn execute_u_xor(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x.bitxor(y), false)) // Bitwise XOR cannot overflow
+
+    }
+    fn execute_u_and(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x.bitand(y), false)) // Bitwise AND cannot overflow
+    }
+    fn execute_u_not(&mut self) -> Result<(), ErrorType> {
+        self.unary_arith_op(|x: Unsigned64| (!x, false)) // Bitwise NOT cannot overflow
+    }
+
+    fn execute_u_shl(&mut self) -> Result<(), ErrorType> {
+        // TODO: add safe wrapper for `y as u32`
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_shl(y as u32))
+    }
+    fn execute_u_shr(&mut self) -> Result<(), ErrorType> {
+        // TODO: add safe wrapper for `y as u32`
+        self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_shl(y as u32))
+    }
+
+
+    fn execute_i_add(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_add(y))
+    }
+    fn execute_i_sub(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_sub(y))
+    }
+    fn execute_i_mul(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_mul(y))
+    }
+    fn execute_i_mod(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| (x % y, false)) // Modulo cannot overflow
+    }
+    fn execute_i_div(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_div(y))
+    }
+
+    fn execute_i_or(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| (x.bitor(y), false)) // Bitwise OR cannot overflow
+    }
+    fn execute_i_xor(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| (x.bitxor(y), false)) // Bitwise XOR cannot overflow
+
+    }
+    fn execute_i_and(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Signed64, y: Signed64| (x.bitand(y), false)) // Bitwise AND cannot overflow
+    }
+    fn execute_i_not(&mut self) -> Result<(), ErrorType> {
+        self.unary_arith_op(|x: Signed64| (!x, false)) // Bitwise NOT cannot overflow
+    }
+
+    fn execute_i_shl(&mut self) -> Result<(), ErrorType> {
+        // TODO: add safe wrapper for `y as u32`
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_shl(y as u32))
+    }
+    fn execute_i_shr(&mut self) -> Result<(), ErrorType> {
+        // TODO: add safe wrapper for `y as u32`
+        self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_shl(y as u32))
+    }
+
+
+    fn execute_f_add(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Float64, y: Float64| (x + y, false)) // Overflow is checked inside by .is_infinite()
+    }
+    fn execute_f_sub(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Float64, y: Float64| (x - y, false)) // Overflow is checked inside by .is_infinite()
+    }
+    fn execute_f_mul(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Float64, y: Float64| (x * y, false)) // Overflow is checked inside by .is_infinite()
+    }
+    fn execute_f_div(&mut self) -> Result<(), ErrorType> {
+        self.binary_arith_op(|x: Float64, y: Float64| (x / y, false)) // Overflow is checked inside by .is_infinite()
+    }
+
+
+    fn execute_l_or(&mut self) -> Result<(), ErrorType> {
+        self.binary_logical_op(|x, y| x || y)
+    }
+    fn execute_l_xor(&mut self) -> Result<(), ErrorType> {
+        self.binary_logical_op(|x, y| x ^ y)
+    }
+    fn execute_l_and(&mut self) -> Result<(), ErrorType> {
+        self.binary_logical_op(|x, y| x && y)
+    }
+    fn execute_l_not(&mut self) -> Result<(), ErrorType> {
+        self.unary_logical_op(|x| !x)
+    }
+
+
     fn execute_jump(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_jump_if(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
+
+
     fn execute_u_equal(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_u_greater(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_u_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_u_less(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_u_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
+
+
     fn execute_i_equal(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_i_greater(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_i_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_i_less(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_i_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
+
+
     fn execute_f_equal(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_f_greater(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_f_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_f_less(&mut self) -> Result<(), ErrorType> { todo!() }
     fn execute_f_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    
-    
+
+
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
 

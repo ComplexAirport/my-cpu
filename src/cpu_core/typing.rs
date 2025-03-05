@@ -73,7 +73,9 @@ impl Reinterpret64 for Float64 {
 impl Reinterpret64 for SingleByte {
     fn to_bytes(&self) -> [u8; 8] { [*self, 0, 0, 0, 0, 0, 0, 0] }
 
-    fn from_bytes(bytes: [u8; 8]) -> Self { SingleByte::from_le_bytes([bytes[0]]) }
+    fn from_bytes(bytes: [u8; 8]) -> Self {
+        SingleByte::from_le_bytes([bytes[0]]) // Ignore the rest of the bytes
+    }
 }
 
 // Reinterpreting bool is also necessary in some parts of our CPU code

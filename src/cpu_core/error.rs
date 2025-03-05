@@ -55,8 +55,7 @@ pub enum CPUError {
     /// Accepts the byte that was an invalid instruction
     #[error("Invalid cpu instruction: {0}")]
     InvalidInstruction(u8),
-
-
+    
     /// Read an invalid operand byte (the byte doesn't represent any operand) \
     /// Accepts the byte that was an invalid operand
     #[error("Invalid operand type: {0}")]
