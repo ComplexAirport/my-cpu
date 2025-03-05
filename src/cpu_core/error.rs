@@ -72,6 +72,9 @@ pub enum CPUError {
     #[error("Invalid flag number: {0}")]
     InvalidFlag(u8),
 
+    #[error("Invalid jump address: {0:?}")]
+    InvalidJump(RamAddr),
+
     /// Operand type is not allowed in that instruction (or part of the instruction) \
     /// Accepts the operand type that was not allowed.
     #[error("Operand type {0:?} is not allowed.")]

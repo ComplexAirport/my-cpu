@@ -317,11 +317,9 @@ impl RAM {
     }
 
     /// Returns `true` if `addr` is within our memory bounds.
-    pub fn is_valid_addr<T>(&self, addr: T) -> bool
-    where
-        T: AsRef<RamAddr>,
+    pub fn is_valid_addr(&self, addr: RamAddr) -> bool
     {
-        addr.as_ref().0 < self.mem.len()
+        addr.0 < self.mem.len()
     }
 
     /// Get the value at `addr` in RAM, if it is valid.

@@ -653,39 +653,92 @@ impl CPU {
     }
 
 
-    fn execute_jump(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_jump_if(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_jump(&mut self) -> Result<(), ErrorType> {
+        let addr = self.read_addr()?;
+        if self.ram.is_valid_addr(addr) {
+            self.set_program_counter(addr);
+            Ok(())
+        } else {
+            Err(ErrorType::CPUError(CPUError::InvalidJump(addr)))
+        }
+    }
+    fn execute_jump_if(&mut self) -> Result<(), ErrorType> {
+        let condition = self.extract_operand()?.as_bool();
+        if condition {
+            self.execute_jump()
+        } else {
+            Ok(())
+        }
+    }
+    fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> {
+        let condition = self.extract_operand()?.as_bool();
+        if !condition {
+            self.execute_jump()
+        } else {
+            Ok(())
+        }
+    }
 
 
-    fn execute_u_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_greater(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_less(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_u_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_u_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Unsigned64, y: Unsigned64| x == y)
+    }
+    fn execute_u_greater(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Unsigned64, y: Unsigned64| x > y)
+    }
+    fn execute_u_greater_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Unsigned64, y: Unsigned64| x >= y)
+    }
+    fn execute_u_less(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Unsigned64, y: Unsigned64| x < y)
+    }
+    fn execute_u_less_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Unsigned64, y: Unsigned64| x <= y)
+    }
 
 
-    fn execute_i_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_greater(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_less(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_i_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_i_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Signed64, y: Signed64| x == y)
+    }
+    fn execute_i_greater(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Signed64, y: Signed64| x > y)
+    }
+    fn execute_i_greater_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Signed64, y: Signed64| x >= y)
+    }
+    fn execute_i_less(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Signed64, y: Signed64| x < y)
+    }
+    fn execute_i_less_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Signed64, y: Signed64| x <= y)
+    }
 
 
-    fn execute_f_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_greater(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_greater_equal(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_less(&mut self) -> Result<(), ErrorType> { todo!() }
-    fn execute_f_less_equal(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_f_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Float64, y: Float64| x == y)
+    }
+    fn execute_f_greater(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Float64, y: Float64| x > y)
+    }
+    fn execute_f_greater_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Float64, y: Float64| x >= y)
+    }
+    fn execute_f_less(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Float64, y: Float64| x < y)
+    }
+    fn execute_f_less_equal(&mut self) -> Result<(), ErrorType> {
+        self.relational_op(|x: Float64, y: Float64| x <= y)
+    }
 
 
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
 
 
-/** This section contains general methods for:
-1. Binary and unary arithmetic operators in our CPU
-2. Binary and unary logical operators in our CPU
+/** This section contains *general helper* methods for:
+1. Binary and unary arithmetic operators
+2. Binary and unary logical operators
+3. Relational (comparison) operators
 */
 impl CPU {
     /// Executes an **Arithmetic**, **Binary** (two arguments) operator.
@@ -720,7 +773,7 @@ impl CPU {
         let rhs = self.extract_operand()?.reinterpret();
 
         let (result, overflowed) = op(lhs, rhs);
-        self.set_arith_result_flags(result, overflowed);
+        self.handle_arith_result(result, overflowed);
         Ok(())
     }
 
@@ -754,7 +807,7 @@ impl CPU {
     {
         let lhs = self.extract_operand()?.reinterpret();
         let (result, overflowed) = op(lhs);
-        self.set_arith_result_flags(result, overflowed);
+        self.handle_arith_result(result, overflowed);
         Ok(())
     }
 
@@ -779,7 +832,7 @@ impl CPU {
         let lhs = self.extract_operand()?.as_bool();
         let rhs = self.extract_operand()?.as_bool();
         let result = op(lhs, rhs);
-        self.set_logical_result_flags(result);
+        self.handle_bool_result(result);
         Ok(())
     }
 
@@ -796,24 +849,48 @@ impl CPU {
     /// - Assigns the Accumulator register to the result of the operation
     /// - Sets the `Zero` flag if the result is `false`.
     /// - Does **not** set the `Overflow` flag since logical operators operate on `bool`-s and cannot
-    /// overflow
+    ///   overflow
     fn unary_logical_op<F>(&mut self, op: F) -> Result<(), ErrorType>
     where
         F: Fn(bool) -> bool
     {
         let lhs = self.extract_operand()?.as_bool();
         let result = op(lhs);
-        self.set_logical_result_flags(result);
+        self.handle_bool_result(result);
+        Ok(())
+    }
+
+    /// Executes a **Relational** operator (which compares the values of two operands).
+    /// ## Usage
+    /// The argument function is `(T, T) -> bool` where `T` is `Reinterpret64 + SignClassifiable` \
+    /// An example of `F` is
+    /// ```rust
+    /// |x, y| x > y // relational greater operator
+    /// ```
+    /// ## Flags and registers
+    /// This method:
+    /// - Assigns the Accumulator register to the result of the operation
+    /// - Sets the `Zero` flag if the result is `false`.
+    fn relational_op<T, F>(&mut self, op: F) -> Result<(), ErrorType>
+    where
+        T: Reinterpret64 + SignClassifiable,
+        F: Fn(T, T) -> bool
+    {
+        let lhs = self.extract_operand()?.reinterpret();
+        let rhs = self.extract_operand()?.reinterpret();
+        let result = op(lhs, rhs);
+        self.handle_bool_result(result);
         Ok(())
     }
 
 
-    /// Helper method. Sets flags according to an arithmetic operator result
+
+    /// Helper method. Sets flags and registers according to an arithmetic operator result
     /// - Sets the `Overflow` flag if overflowed is `true` is `result` is infinite (this means
     /// [`Float64`] operator overflowed).
     /// - Sets the `Zero` flag if `result` is zero.
     /// - Sets the `Sign` flag if `result` is negative.
-    fn set_arith_result_flags<T>(&mut self, result: T, overflowed: bool)
+    fn handle_arith_result<T>(&mut self, result: T, overflowed: bool)
     where T: Reinterpret64 + SignClassifiable
     {
         // Reset the flags before setting them so that they represent the result
@@ -839,15 +916,16 @@ impl CPU {
         self.set_accu_reg(result.reinterpret());
     }
 
-    /// Helper method. Sets flags according to a logical operator result
+    /// Helper method. Sets flags according to a `bool` result (from logical operators,
+    /// relational operators, etc.)
     /// - Sets the `Zero` flag if `result` is `false`.
-    fn set_logical_result_flags(&mut self, result: bool)
+    fn handle_bool_result(&mut self, result: bool)
     {
         // Reset the flags before setting them so that they represent the result
         // of the latest operation
         self.reset_flags();
 
-        if result == false {
+        if !result {
             self.enable_flag(CPUFlag::Zero);
             self.set_accu_reg(1); // `true` is implicitly converted to `1`
         } else {
@@ -857,12 +935,11 @@ impl CPU {
 }
 
 
-/** Helper methods for reading different types of operands */
+/** Helper methods for reading and extracting different of operands and their values */
 impl CPU {
-    /** Reading methods */
-    /// Extracts the next operand value \
-    /// This method operates in the following way: \
-    /// It first reads an operand type.
+    /// Extracts a value from the next operand value \
+    /// This method operates in the following way:
+    /// - It first reads an operand type.
     /// - If the operand type is a RAM address, the methods extracts the value at that address. ([`RamUnit`])
     /// - If the operand type is a register, the method extracts the value of that register ([`RegType`])
     /// - If the operand type is a flag, the method extracts the value of that flag (`bool`)
