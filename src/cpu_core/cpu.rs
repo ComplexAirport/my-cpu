@@ -1,75 +1,79 @@
-use std::ops::{BitAnd, BitOr, BitXor};
-use crate::define_opcodes;
-pub use super::typing::{*};
-pub use super::ram::{RamAddr, RamUnit, RAM};
-pub use super::error::{ErrorType, CPUError};
+//! This file contains interfaces for our CPU \
+//! This includes:
+//! - [`CPU`] - Main CPU interface
+//! - [`CPUInstr`] - Represents a CPU instruction
+//! - [`CPUFlag`] - Represents a CPU flag
+//! - [`CPUError`] - Represents a CPU related error
 
-
-pub const DBG_CLS: bool = false;     // TODO: delete
-pub const DBG_SLEEP: usize = 0;      // TODO: delete
-pub const DBG_PRINT: bool = true;    // TODO: delete
-
+use std::ops::{BitAnd, BitOr, BitXor};  // Used for CPU bit manipulation
+use crate::define_opcodes;  // Used to convert enums like CPUInstr and CPUFlag to bytes and vice-versa
+pub use super::typing::{*};  // Used to wrap bytes into different data-types (like f64, i64, etc.)
+pub use super::ram::{RamAddr, RamUnit, RAM};  // Access to RAM
+pub use super::error::{ErrorType, CPUError};  // Error types
 
 /// Represents a CPU instruction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CPUInstr {
-    /// Halts the cpu (no more instructions are executing)
+    // Halts the cpu (no more instructions are executing)
     Halt,
 
-    /// Sets value of #1 to value at #2
-    /// (Note: #1 is not allowed to be an immediate value)
+    // Sets value of #1 to value at #2
+    // (Note: #1 is not allowed to be an immediate value)
     Set,
 
-    /// Unsigned instructions
-    /// These instructions interpret the operands as `u64` bytes */
+    // Unsigned instructions
+    // These instructions interpret the operands as `u64` bytes */
     UAdd, USub, UMul, UMod, UDiv, // Arithmetic operators
     UOr, UXor, UAnd, UNot,        // Bitwise operators
     UShl, UShr,                   // Shift left (<<) and Shift right (>>) operators
 
-    /// Signed instructions
-    /// These instructions interpret the operands `i64` bytes
+    // Signed instructions
+    // These instructions interpret the operands `i64` bytes
     IAdd, ISub, IMul, IMod, IDiv, // Arithmetic operators
     IOr, IXor, IAnd, INot,        // Bitwise operators
     IShl, IShr,                   // Shift left (<<) and Shift right (>>) operators
 
-    /// Floating operator instructions
-    /// These instructions interpret the operands as `f64` bytes
+    // Floating operator instructions
+    // These instructions interpret the operands as `f64` bytes
     FAdd, FSub, FMul, FDiv, // Arithmetic operators
 
-    /// Logical operators
-    /// (treats operands as boolean values: zero = false, nonzero = true)
+    // Logical operators
+    // (treats operands as boolean values: zero = false, nonzero = true)
     LOr, LXor, LAnd, LNot,
 
-    /// Jump instructions
+    // Jump instructions
     Jump,           // Jumps to a memory address
     JumpIf,         // Jumps to [1] if [2] is nonzero
     JumpIfNot,      // Jumps to [1] if [2] is zero
 
-    /// Unsigned comparison instructions
+    // Unsigned comparison instructions
     UEqual,             // ==
     UGreater,           // >
     UGreaterEqual,      // >=
     ULess,              // <
     ULessEqual,         // <=
 
-    /// Signed comparison instructions
+    // Signed comparison instructions
     IEqual,             // ==
     IGreater,           // >
     IGreaterEqual,      // >=
     ILess,              // <
     ILessEqual,         // <=
 
-    /// Float comparison instructions
+    // Float comparison instructions
     FEqual,             // ==
     FGreater,           // >
     FGreaterEqual,      // >=
     FLess,              // <
     FLessEqual,         // <=
 
-    /// Syscall instruction
+    // Stack and function related instructions
+    Push, Pop,
+    Call, Ret,
+
+    // Syscall instruction
     Syscall
 }
-
 
 impl CPUInstr {
      define_opcodes!(
@@ -111,6 +115,11 @@ impl CPUInstr {
         FGREATEREQUAL,
         FLESS,
         FLESSEQUAL,
+
+        PUSH,
+        POP,
+        CALL,
+        RET,
 
         SYSCALL
      );
@@ -180,6 +189,12 @@ impl CPUInstr {
             CPUInstr::FGreaterEqual => Self::FGREATEREQUAL,
             CPUInstr::FLess => Self::FLESS,
             CPUInstr::FLessEqual => Self::FLESSEQUAL,
+
+            CPUInstr::Push => Self::PUSH,
+            CPUInstr::Pop => Self::POP,
+
+            CPUInstr::Call => Self::CALL,
+            CPUInstr::Ret => Self::RET,
 
             CPUInstr::Syscall => Self::SYSCALL,
         }
@@ -251,6 +266,11 @@ impl CPUInstr {
             Self::FLESS => Ok(CPUInstr::FLess),
             Self::FLESSEQUAL => Ok(CPUInstr::FLessEqual),
 
+            Self::PUSH => Ok(CPUInstr::Pop),
+            Self::POP => Ok(CPUInstr::Pop),
+            Self::CALL => Ok(CPUInstr::Call),
+            Self::RET => Ok(CPUInstr::Ret),
+
             Self::SYSCALL => Ok(CPUInstr::Syscall),
 
             _ => Err(CPUError::InvalidInstruction(byte)),
@@ -262,12 +282,13 @@ impl CPUInstr {
 /// Represents the type of the operand
 /// # Example:
 /// For example, in a [`CpuInstr::Add`] instruction,
-/// both operands are preceded by the operand type like this: \
-/// [`CPUInstr::ADD`] \
-/// [`OperandType::IMMEDIATE`] \
-/// `100` \
-/// [`OperandType::IMMEDIATE`] \
-/// `200` \
+/// both operands are preceded by the operand type like this:
+/// - [`CPUInstr::ADD`]
+/// - [`OperandType::Immediate`]
+/// - `100`
+/// - [`OperandType::Immediate`]
+/// - `200`
+///
 /// Adds immediate value `100` to immediate value `200`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OperandType {
@@ -342,6 +363,7 @@ impl CPUFlag {
         }
     }
 }
+
 
 
 /// Represents the amount of general-purpose registers in the CPU
@@ -498,6 +520,10 @@ impl CPU {
             CPUInstr::FGreaterEqual => self.execute_f_greater_equal(),
             CPUInstr::FLess => self.execute_f_less(),
             CPUInstr::FLessEqual => self.execute_f_less_equal(),
+            CPUInstr::Push => self.execute_push(),
+            CPUInstr::Pop => self.execute_pop(),
+            CPUInstr::Call => self.execute_call(),
+            CPUInstr::Ret => self.execute_ret(),
             CPUInstr::Syscall => self.execute_syscall(),
 
         };
@@ -763,6 +789,10 @@ impl CPU {
         self.relational_op(|x: Float64, y: Float64| x <= y)
     }
 
+    fn execute_push(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_pop(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_call(&mut self) -> Result<(), ErrorType> { todo!() }
+    fn execute_ret(&mut self) -> Result<(), ErrorType> { todo!() }
 
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
@@ -1171,6 +1201,15 @@ impl CPU {
         self.disable_flag(CPUFlag::Sign);
     }
 }
+
+
+
+/*****************************************************************************************/
+/* All code starting from this line is used only for debugging. It will be removed later */
+/*****************************************************************************************/
+pub const DBG_CLS: bool = false;     // TODO: delete
+pub const DBG_SLEEP: usize = 0;      // TODO: delete
+pub const DBG_PRINT: bool = true;    // TODO: delete
 
 
 /** Prints the cpu state. NOTE: Only for debugging purposes */

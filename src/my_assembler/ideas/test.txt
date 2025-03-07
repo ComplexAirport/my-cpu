@@ -1,0 +1,10 @@
+// Stack []
+push 1;  // Stack: [1];
+push 2;  // Stack: [1, 2];
+call A;  // Stack: [1, 2, RETURN_ADDR];
+
+A:
+pop r1;   // Stack [2, RETURN_ADDR]
+pop r2;   // Stack [RETURN_ADDR]
+ret       // Stack []
+
