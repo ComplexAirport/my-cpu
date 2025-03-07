@@ -1,15 +1,16 @@
-//! This file contains interfaces for our CPU \
+//! This file contains interfaces for our simulated CPU \
 //! This includes:
 //! - [`CPU`] - Main CPU interface
-//! - [`CPUInstr`] - Represents a CPU instruction
-//! - [`CPUFlag`] - Represents a CPU flag
-//! - [`CPUError`] - Represents a CPU related error
-
-use std::ops::{BitAnd, BitOr, BitXor};  // Used for CPU bit manipulation
+//! - [`CPUInstr`] - Represents CPU instructions
+//! - [`CPUFlag`] - Represents CPU flags
+//! - [`CPUError`] - Represents CPU related errors
+//! - etc.
+use std::ops::{BitAnd, BitOr, BitXor}; // Used in CPU bit manipulation instructions
 use crate::define_opcodes;  // Used to convert enums like CPUInstr and CPUFlag to bytes and vice-versa
 pub use super::typing::{*};  // Used to wrap bytes into different data-types (like f64, i64, etc.)
-pub use super::ram::{RamAddr, RamUnit, RAM};  // Access to RAM
+pub use super::ram::{RamAddr, RAM};  // Access to RAM
 pub use super::error::{ErrorType, CPUError};  // Error types
+
 
 /// Represents a CPU instruction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -279,6 +280,7 @@ impl CPUInstr {
 }
 
 
+
 /// Represents the type of the operand
 /// # Example:
 /// For example, in a [`CpuInstr::Add`] instruction,
@@ -329,6 +331,7 @@ impl OperandType {
 }
 
 
+
 /// Represents a flag in the CPU (zero, overflow, etc.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CPUFlag {
@@ -366,44 +369,23 @@ impl CPUFlag {
 
 
 
-/// Represents the amount of general-purpose registers in the CPU
-pub const GEN_REG_COUNT: usize = 8;
 
-/// Represents the index of special accumulator register
-pub const ACCU_IDX: usize = GEN_REG_COUNT;
-
-/// Represents the total amount of registers in the CPU
-/// - [`GEN_REG_COUNT`] general-purpose
-/// - 1 special accumulator
-pub const REG_COUNT: usize = GEN_REG_COUNT + 1;
-
-/// Represents the amount of bytes 1 CPU instruction takes
-pub const INSTRUCTION_SIZE: usize = 1;
-
-/// Represents the amount of bytes 1 operand type takes
-pub const OPERAND_TYPE_SIZE: usize = 1;
-
-/// Represents the amount of bytes 1 memory address takes
-pub const MEMORY_ADDRESS_SIZE: usize = 8;
-
-/// Represents the amount of bytes 1 register number takes
-pub const REG_NUM_SIZE: usize = 1;
-
-/// Represents the amount of bytes 1 flag takes
-pub const FLAG_TYPE_SIZE: usize = 1;
-
-/// Represents the amount of bytes 1 immediate value takes \
-/// All immediate values are 8 bytes, but their bytes can be interpreted as float, i64, u64, etc.
-pub const IMMEDIATE_VALUE_SIZE: usize = 8;
-
-
-/// Represents the CPU itself
+/// Represents our simulated CPU interface
 pub struct CPU {
     pub ram: RAM,
 
     /// - 8 general-purpose 8-byte registers
     /// - 1 special accumulator register
-    registers: [RegType; REG_COUNT],
+    registers: [RegType; CPU::REG_COUNT],
+
+    /// Base stack pointer
+    sb: RamAddr,
+
+    /// Current stack pointer
+    sp: RamAddr,
+
+    /// The minimum address the stack can grow to (stack grows downwards)
+    min_stack_addr: RamAddr,
 
     /// Special register which temporarily stores the current instruction
     instr_reg: CPUInstr,
@@ -422,20 +404,73 @@ pub struct CPU {
 
     /// Counts the instructions.
     /// At the moment exists only for debugging purposes, might delete later
-    instruction_counter: usize
+    instruction_counter: usize,
 }
-
 
 /// Main CPU methods
 impl CPU {
+    // Constants used in the CPU
+
+    /***********************************************************/
+    /* Constants related to registers                          */
+    /***********************************************************/
+    /// Represents the amount of general-purpose registers in the CPU
+    pub const GEN_REG_COUNT: usize = 8;
+
+    /// Represents the index of special accumulator register
+    pub const ACCU_IDX: usize = Self::GEN_REG_COUNT;
+
+    /// Represents the maximum limit of bytes the stack can grow to regardless of storage
+    /// Note: if available RAM is less than this constant, another value will be used
+    /// (refer to [`Self::new`] implementation for details)
+    pub const STACK_SIZE_LIMIT: usize = 32 * 1024; // 32KB
+
+    /// Represents the total amount of registers in the CPU
+    /// - [`GEN_REG_COUNT`] general-purpose
+    /// - 1 special accumulator
+    pub const REG_COUNT: usize = Self::GEN_REG_COUNT + 1;
+
+
+    /***********************************************************/
+    /* Amount of bytes of each type of operands                */
+    /***********************************************************/
+
+    /// Represents the amount of bytes 1 CPU instruction takes
+    pub const INSTRUCTION_SIZE: usize = 1;
+
+    /// Represents the amount of bytes 1 operand type takes
+    pub const OPERAND_TYPE_SIZE: usize = 1;
+
+    /// Represents the amount of bytes 1 memory address takes
+    pub const MEMORY_ADDRESS_SIZE: usize = 8;
+
+    /// Represents the amount of bytes 1 register number takes
+    pub const REG_NUM_SIZE: usize = 1;
+
+    /// Represents the amount of bytes 1 flag takes
+    pub const FLAG_TYPE_SIZE: usize = 1;
+
+    /// Represents the amount of bytes 1 immediate value takes \
+    /// All immediate values are 8 bytes, but their bytes can be interpreted as float, i64, u64, etc.
+    pub const IMMEDIATE_VALUE_SIZE: usize = 8;
+
 
     /// Represents the address of the first instruction for the CPU
     pub const START_ADDR: RamAddr = RamAddr(0x0_usize);
 
     pub fn new(ram: RAM) -> Self {
+        // Calculate the minimum address stack can grow to
+        // The algorithm is `MIN(STACK_SIZE_LIMIT, ram.size() / 4)`
+        let last_addr = ram.last_addr();
+        let max_stack_size = Self::STACK_SIZE_LIMIT.min(ram.size() / 4);
+        let min_stack_addr = last_addr.sub(max_stack_size).unwrap();
+
         Self {
             ram,
-            registers: [0 as RegType; REG_COUNT],
+            registers: [0 as RegType; Self::REG_COUNT],
+            sb: last_addr,
+            sp: last_addr,
+            min_stack_addr,
             instr_reg: CPUInstr::Halt,
             prog_counter: Some(CPU::START_ADDR),
             zero_flag: false,
@@ -460,13 +495,13 @@ impl CPU {
         let mut pc = self.prog_counter.unwrap();
 
         // Fetch the byte at program counter address
-        let instr_byte = self.ram.at(pc)?;
+        let instr_byte = self.ram.read_byte(pc)?;
 
         // Convert the byte representing the instruction to CPUInstr
         self.instr_reg = CPUInstr::from_byte(instr_byte)?;
 
         // Increment the program counter
-        pc.inc(INSTRUCTION_SIZE)?;
+        pc.inc(Self::INSTRUCTION_SIZE)?;
         self.set_program_counter(pc);
 
         let res = match self.instr_reg {
@@ -533,8 +568,7 @@ impl CPU {
         res
     }
 
-    /// At the moment only exists for debugging purposes, might delete later
-    /// TODO: delete
+    /// At the moment only exists for debugging purposes, might delete later | TODO: delete
     fn inc_instruction_counter(&mut self) {
         self.instruction_counter += 1;
         self.print();
@@ -545,22 +579,27 @@ impl CPU {
 }
 
 
-/** This section contains main CPU instructions
-Most of the instruction call helper methods instead of operating directly
-*/
+/// This section contains main CPU instructions
+/// Most of the instruction call helper methods instead of operating directly
 impl CPU {
+    // From here on in the comments:
+    // Operand types are marked by op_t1, op_t2, ...
+    // Operands are marked by op1, op2, ...
+
+    /// Halt
     fn execute_halt(&mut self) -> Result<(), ErrorType> {
         self.halt_program_counter();
         Ok(())
     }
 
+    /// Set op_t1 op1 op_t2 op2
     fn execute_set(&mut self) -> Result<(), ErrorType> {
         let operand_type = self.read_operand_type()?;
         match operand_type {
             OperandType::MemoryAddress => {
                 let to_set = self.read_addr()?;
                 let value: SingleByte = self.extract_operand()?.reinterpret();
-                self.ram.write_byte(to_set, value)?;
+                self.ram.write_byte(value, to_set)?;
             }
             OperandType::Register => {
                 let to_set = self.read_reg()?;
@@ -580,15 +619,21 @@ impl CPU {
     }
 
 
+    /// UAdd op_t1 op1 op_t2 op2
     fn execute_u_add(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_add(y))
     }
+    /// USub op_t1 op1 op_t2 op2
     fn execute_u_sub(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_sub(y))
     }
+    /// UMul op_t1 op1 op_t2 op2
     fn execute_u_mul(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_mul(y))
     }
+    /// UMod op_t1 op1 op_t2 op2
+    ///
+    /// note: if op2 is zero, the result is also zero and overflow flag is enabled
     fn execute_u_mod(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| {
             if y == 0 {
@@ -598,6 +643,9 @@ impl CPU {
             }
         })
     }
+    /// UDiv op_t1 op1 op_t2 op2
+    ///
+    /// note: if op2 is zero, the result is also zero and overflow flag is enabled
     fn execute_u_div(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| {
             if y == 0 {
@@ -608,39 +656,55 @@ impl CPU {
         })
     }
 
+    /// UOr op_t1 op1 op_t2 op2
     fn execute_u_or(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x.bitor(y), false)) // Bitwise OR cannot overflow
     }
+    /// UXor op_t1 op1 op_t2 op2
     fn execute_u_xor(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x.bitxor(y), false)) // Bitwise XOR cannot overflow
 
     }
+    /// UAnd op_t1 op1 op_t2 op2
     fn execute_u_and(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| (x.bitand(y), false)) // Bitwise AND cannot overflow
     }
+    /// UNot op_t1 op1
     fn execute_u_not(&mut self) -> Result<(), ErrorType> {
         self.unary_arith_op(|x: Unsigned64| (!x, false)) // Bitwise NOT cannot overflow
     }
 
+    /// UShl op_t1 op1 op_t2 op2
+    ///
+    /// note: op2 must be safely convertible to `u32`
     fn execute_u_shl(&mut self) -> Result<(), ErrorType> {
         // TODO: add safe wrapper for `y as u32`
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_shl(y as u32))
     }
+    /// UShr op_t1 op1 op_t2 op2
+    ///
+    /// note: op2 must be safely convertible to `u32`
     fn execute_u_shr(&mut self) -> Result<(), ErrorType> {
         // TODO: add safe wrapper for `y as u32`
         self.binary_arith_op(|x: Unsigned64, y: Unsigned64| x.overflowing_shr(y as u32))
     }
 
 
+    /// IAdd op_t1 op1 op_t2 op2
     fn execute_i_add(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_add(y))
     }
+    /// ISub op_t1 op1 op_t2 op2
     fn execute_i_sub(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_sub(y))
     }
+    /// IMul op_t1 op1 op_t2 op2
     fn execute_i_mul(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_mul(y))
     }
+    /// IMod op_t1 op1 op_t2 op2
+    ///
+    /// note: if op2 is zero, the result is also zero and overflow flag is enabled
     fn execute_i_mod(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| {
             if y == 0 {
@@ -650,6 +714,9 @@ impl CPU {
             }
         })
     }
+    /// IDiv op_t1 op1 op_t2 op2
+    ///
+    /// note: if op2 is zero, the result is also zero and overflow flag is enabled
     fn execute_i_div(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| {
             if y == 0 {
@@ -660,60 +727,87 @@ impl CPU {
         })
     }
 
+    /// IOr op_t1 op1 op_t2 op2
     fn execute_i_or(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| (x.bitor(y), false)) // Bitwise OR cannot overflow
     }
+    /// IXor op_t1 op1 op_t2 op2
     fn execute_i_xor(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| (x.bitxor(y), false)) // Bitwise XOR cannot overflow
 
     }
+    /// IAnd op_t1 op1 op_t2 op2
     fn execute_i_and(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Signed64, y: Signed64| (x.bitand(y), false)) // Bitwise AND cannot overflow
     }
+    /// INot op_t1 op1
     fn execute_i_not(&mut self) -> Result<(), ErrorType> {
         self.unary_arith_op(|x: Signed64| (!x, false)) // Bitwise NOT cannot overflow
     }
 
+    /// IShl op_t1 op1 op_t2 op2
+    ///
+    /// note: op2 must be safely convertible to `u32`
     fn execute_i_shl(&mut self) -> Result<(), ErrorType> {
         // TODO: add safe wrapper for `y as u32`
         self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_shl(y as u32))
     }
+    /// IShr op_t1 op1 op_t2 op2
+    ///
+    /// note: op2 must be safely convertible to `u32`
     fn execute_i_shr(&mut self) -> Result<(), ErrorType> {
         // TODO: add safe wrapper for `y as u32`
         self.binary_arith_op(|x: Signed64, y: Signed64| x.overflowing_shr(y as u32))
     }
 
 
+    /// FAdd op_t1 op1 op_t2 op2
     fn execute_f_add(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Float64, y: Float64| (x + y, false)) // Overflow is checked inside by .is_infinite()
     }
+    /// FSub op_t1 op1 op_t2 op2
     fn execute_f_sub(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Float64, y: Float64| (x - y, false)) // Overflow is checked inside by .is_infinite()
     }
+    /// FMul op_t1 op1 op_t2 op2
     fn execute_f_mul(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Float64, y: Float64| (x * y, false)) // Overflow is checked inside by .is_infinite()
     }
+    /// FDiv op_t1 op1 op_t2 op2
     fn execute_f_div(&mut self) -> Result<(), ErrorType> {
         self.binary_arith_op(|x: Float64, y: Float64| (x / y, false)) // Overflow is checked inside by .is_infinite()
     }
 
-
+    /// LOr op_t1 op1 op_t2 op2
     fn execute_l_or(&mut self) -> Result<(), ErrorType> {
         self.binary_logical_op(|x, y| x || y)
     }
+    /// LXor op_t1 op1 op_t2 op2
     fn execute_l_xor(&mut self) -> Result<(), ErrorType> {
         self.binary_logical_op(|x, y| x ^ y)
     }
+    /// LAnd op_t1 op1 op_t2 op2
     fn execute_l_and(&mut self) -> Result<(), ErrorType> {
         self.binary_logical_op(|x, y| x && y)
     }
+    /// LNot op_t1 op1 op_t2 op2
     fn execute_l_not(&mut self) -> Result<(), ErrorType> {
         self.unary_logical_op(|x| !x)
     }
 
-
+    /// Jump op_t1 jump_to
+    ///
+    /// note: op_t1 can ONLY be:
+    /// - [`OperandType::Register`]
+    /// - [`OperandType::MemoryAddress`]
     fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let addr = self.read_addr()?;
+        let op_t = self.read_operand_type()?;
+        let addr = match op_t {
+            OperandType::MemoryAddress => self.read_addr()?,
+            OperandType::Register => RamAddr(self.read_and_extract_reg()?.reinterpret::<Unsigned64>() as usize),
+            _ => return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t)))
+        };
+
         if self.ram.is_valid_addr(addr) {
             self.set_program_counter(addr);
             Ok(())
@@ -721,6 +815,11 @@ impl CPU {
             Err(ErrorType::CPUError(CPUError::InvalidJump(addr)))
         }
     }
+    /// JumpIf op_t1 condition op_t2 jump_to
+    ///
+    /// note: op_t2 can ONLY be:
+    /// - [`OperandType::Register`]
+    /// - [`OperandType::MemoryAddress`]
     fn execute_jump_if(&mut self) -> Result<(), ErrorType> {
         let condition = self.extract_operand()?.as_bool();
         if condition {
@@ -729,6 +828,11 @@ impl CPU {
             Ok(())
         }
     }
+    /// JumpIfNot op_t1 condition op_t2 jump_to
+    ///
+    /// note: op_t2 can ONLY be:
+    /// - [`OperandType::Register`]
+    /// - [`OperandType::MemoryAddress`]
     fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> {
         let condition = self.extract_operand()?.as_bool();
         if !condition {
@@ -738,71 +842,90 @@ impl CPU {
         }
     }
 
-
+    /// UEquals op_t1 op1 op_t2 op2
     fn execute_u_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Unsigned64, y: Unsigned64| x == y)
     }
+    /// UGreater op_t1 op1 op_t2 op2
     fn execute_u_greater(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Unsigned64, y: Unsigned64| x > y)
     }
+    /// UGreaterEqual op_t1 op1 op_t2 op2
     fn execute_u_greater_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Unsigned64, y: Unsigned64| x >= y)
     }
+    /// ULess op_t1 op1 op_t2 op2
     fn execute_u_less(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Unsigned64, y: Unsigned64| x < y)
     }
+    /// ULessEqual op_t1 op1 op_t2 op2
     fn execute_u_less_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Unsigned64, y: Unsigned64| x <= y)
     }
 
-
+    /// IEquals op_t1 op1 op_t2 op2
     fn execute_i_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Signed64, y: Signed64| x == y)
     }
+    /// IGreater op_t1 op1 op_t2 op2
     fn execute_i_greater(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Signed64, y: Signed64| x > y)
     }
+    /// IGreaterEqual op_t1 op1 op_t2 op2
     fn execute_i_greater_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Signed64, y: Signed64| x >= y)
     }
+    /// ILess op_t1 op1 op_t2 op2
     fn execute_i_less(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Signed64, y: Signed64| x < y)
     }
+    /// ILessEqual op_t1 op1 op_t2 op2
     fn execute_i_less_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Signed64, y: Signed64| x <= y)
     }
 
-
+    /// FEquals op_t1 op1 op_t2 op2
     fn execute_f_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Float64, y: Float64| x == y)
     }
+    /// FGreater op_t1 op1 op_t2 op2
     fn execute_f_greater(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Float64, y: Float64| x > y)
     }
+    /// FGreaterEqual op_t1 op1 op_t2 op2
     fn execute_f_greater_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Float64, y: Float64| x >= y)
     }
+    /// FLess op_t1 op1 op_t2 op2
     fn execute_f_less(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Float64, y: Float64| x < y)
     }
+    /// FLessEqual op_t1 op1 op_t2 op2
     fn execute_f_less_equal(&mut self) -> Result<(), ErrorType> {
         self.relational_op(|x: Float64, y: Float64| x <= y)
     }
 
+
+    // Push op_t1 op1
     fn execute_push(&mut self) -> Result<(), ErrorType> { todo!() }
+
+    // Pop op
+    // `op` is one byte which represents a register number
     fn execute_pop(&mut self) -> Result<(), ErrorType> { todo!() }
+
     fn execute_call(&mut self) -> Result<(), ErrorType> { todo!() }
+
     fn execute_ret(&mut self) -> Result<(), ErrorType> { todo!() }
+
 
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
 
 
-/** This section contains *general helper* methods for:
-1. Binary and unary arithmetic operators
-2. Binary and unary logical operators
-3. Relational (comparison) operators
-*/
+/// This section contains *general helper* methods for:
+/// 1. Binary and unary arithmetic operators
+/// 2. Binary and unary logical operators
+/// 3. Relational (comparison) operators
 impl CPU {
     /// Executes an **Arithmetic**, **Binary** (two arguments) operator.
     /// ## Usage
@@ -997,7 +1120,7 @@ impl CPU {
 }
 
 
-/** Helper methods for reading and extracting different of operands and their values */
+/// Helper methods for reading and extracting different of operands and their values
 impl CPU {
     /// Extracts a value from the next operand value \
     /// This method operates in the following way:
@@ -1019,17 +1142,17 @@ impl CPU {
         Ok(result)
     }
 
-    /// Reads the next 8 bytes, interprets them as a ram address ([`RamAddr`]), extracts the value at that
+    /// Reads the next 8 bytes, interprets them as a ram address ([`RamAddr`]), extracts the byte at that
     /// RAM address and returns it
     /// - Increments the program counter
-    fn read_and_extract_addr(&mut self) -> Result<RamUnit, ErrorType> {
+    fn read_and_extract_addr(&mut self) -> Result<SingleByte, ErrorType> {
         let addr = self.read_addr()?;
-        let extracted = self.ram.at(addr)?;
+        let extracted = self.ram.read_byte(addr)?;
         Ok(extracted)
     }
 
     /// Reads the next 8 bytes, interprets them as a register number (`usize`), extracts
-    /// the value at that RAM address and returns it as [`RegType`]
+    /// the value from that register and returns it as [`RegType`]
     /// - Increments the program counter
     fn read_and_extract_reg(&mut self) -> Result<RegType, ErrorType> {
         let num = self.read_reg()?;
@@ -1051,7 +1174,7 @@ impl CPU {
     fn read_addr(&mut self) -> Result<RamAddr, ErrorType> {
         let bytes = self.ram.read_bytes::<8>(self.prog_counter.unwrap())?;
         let addr = RamAddr(Unsigned64::from_le_bytes(bytes) as usize);
-        self.inc_prog_counter(MEMORY_ADDRESS_SIZE)?;
+        self.inc_prog_counter(Self::MEMORY_ADDRESS_SIZE)?;
         Ok(addr)
     }
 
@@ -1059,7 +1182,7 @@ impl CPU {
     /// - Increments the program counter
     fn read_reg(&mut self) -> Result<usize, ErrorType> {
         let num = self.ram.read_byte(self.prog_counter.unwrap())? as usize;
-        self.inc_prog_counter(REG_NUM_SIZE)?;
+        self.inc_prog_counter(Self::REG_NUM_SIZE)?;
         Ok(num)
     }
 
@@ -1068,7 +1191,7 @@ impl CPU {
     fn read_flag(&mut self) -> Result<CPUFlag, ErrorType> {
         let byte = self.ram.read_byte(self.prog_counter.unwrap())?;
         let flag = CPUFlag::from_byte(byte)?;
-        self.inc_prog_counter(FLAG_TYPE_SIZE)?;
+        self.inc_prog_counter(Self::FLAG_TYPE_SIZE)?;
         Ok(flag)
     }
 
@@ -1077,22 +1200,97 @@ impl CPU {
     fn read_immediate(&mut self) -> Result<EightBytes, ErrorType> {
         let bytes = self.ram.read_bytes::<8>(self.prog_counter.unwrap())?;
         let value: EightBytes = EightBytes::from_le_bytes(bytes);
-        self.inc_prog_counter(IMMEDIATE_VALUE_SIZE)?;
+        self.inc_prog_counter(Self::IMMEDIATE_VALUE_SIZE)?;
         Ok(value)
     }
 
     /// Reads the next 1 byte and returns it as [`OperandType`]
     /// - Increments the program counter
     fn read_operand_type(&mut self) -> Result<OperandType, ErrorType> {
-        let operand_type_byte = self.ram.at(self.prog_counter.unwrap())?;
+        let operand_type_byte = self.ram.read_byte(self.prog_counter.unwrap())?;
         let operand_type = OperandType::from_byte(operand_type_byte)?;
-        self.inc_prog_counter(OPERAND_TYPE_SIZE)?;
+        self.inc_prog_counter(Self::OPERAND_TYPE_SIZE)?;
         Ok(operand_type)
     }
 }
 
 
-/** Program Counter related methods */
+/// Stack related methods
+impl CPU {
+    /// Pushes an 8-byte value to the stack
+    pub fn push_to_stack(&mut self, value: EightBytes) -> Result<(), ErrorType> {
+        // Save current stack pointer
+        let write_to = self.get_sp();
+
+        // Decrement the stack pointer, create more space
+        self.dec_sp(8)?;
+
+        // Write the value to the RAM
+        let bytes = value.to_bytes();
+        self.ram.write_bytes(&bytes, write_to)?;
+
+        Ok(())
+    }
+
+    /// Pops an 8-byte value from the stack
+    pub fn pop_from_stack(&mut self) -> Result<EightBytes, ErrorType> {
+        // Save current stack pointer
+        let read_from = self.get_sp();
+
+        // Increment the stack pointer, erase the value from the stack
+        self.inc_sp(8)?;
+
+        // Read the value from the RAM
+        let bytes = self.ram.read_bytes::<8>(read_from)?;
+
+        // Convert the bytes to `EightBytes`
+        let value = EightBytes::from_bytes(bytes);
+
+        Ok(value)
+    }
+
+
+    /// Returns the value of stack base pointer
+    pub const fn get_sb(&self) -> RamAddr { self.sb }
+
+    /// Sets the value of stack base pointer
+    pub const fn set_sb(&mut self, addr: RamAddr) { self.sb = addr }
+
+    /// Returns the value of current stack pointer
+    pub const fn get_sp(&self) -> RamAddr { self.sp }
+
+    /// Sets the value of current stack pointer
+    pub const fn set_sp(&mut self, addr: RamAddr) { self.sp = addr }
+
+    /// Decrement the value of current stack pointer by specified amount of bytes (thus create more space
+    /// for stack because stack grows downwards) \
+    /// - Doesn't let going down beyond `self.min_stack_addr`
+    pub fn dec_sp(&mut self, amount: usize) -> Result<(), ErrorType> {
+        let new_sp = self.get_sp().sub(amount)?;
+        if new_sp < self.min_stack_addr {
+            Err(ErrorType::from(CPUError::StackOverflow))
+        } else {
+            self.set_sp(new_sp);
+            Ok(())
+        }
+    }
+
+    /// Increment the value of current stack pointer by specified amount of bytes (thus shrink the
+    /// stack space because stack grows downwards) \
+    /// - Doesn't let going down beyond last ram address
+    pub fn inc_sp(&mut self, amount: usize) -> Result<(), ErrorType> {
+        let new_sp = self.get_sp().add(amount)?;
+        if new_sp > self.ram.last_addr() {
+            Err(ErrorType::from(CPUError::StackUnderflow))
+        } else {
+            self.set_sp(new_sp);
+            Ok(())
+        }
+    }
+}
+
+
+/// Program Counter related methods
 impl CPU {
     /// Returns the value of the program counter - address of the next instruction
     pub fn get_program_counter(&self) -> Option<RamAddr> {
@@ -1126,11 +1324,11 @@ impl CPU {
 }
 
 
-/** Register related methods */
+/// General register related methods
 impl CPU {
     /// Returns the value of the `n`-th register if it exists, Error otherwise
-    pub fn get_reg(&self, n: usize) -> Result<RegType, CPUError> {
-        if n < REG_COUNT {
+    pub const fn get_reg(&self, n: usize) -> Result<RegType, CPUError> {
+        if n < Self::REG_COUNT {
             Ok(self.registers[n])
         } else {
             Err(CPUError::InvalidRegister(n))
@@ -1138,8 +1336,8 @@ impl CPU {
     }
 
     /// Sets the value of `n`-th register to `val` if it exists, Error otherwise
-    pub fn set_reg(&mut self, n: usize, val: RegType) -> Result<(), CPUError> {
-        if n < REG_COUNT {
+    pub const fn set_reg(&mut self, n: usize, val: RegType) -> Result<(), CPUError> {
+        if n < Self::REG_COUNT {
             self.registers[n] = val;
             Ok(())
         } else {
@@ -1147,22 +1345,23 @@ impl CPU {
         }
     }
 
+
     /// Returns the value of the special accumulator register
     pub fn get_accu_reg(&self) -> RegType {
-        self.get_reg(ACCU_IDX).unwrap()
+        self.get_reg(Self::ACCU_IDX).unwrap()
     }
 
     /// Sets the value of the special accumulator register to `val`
     pub fn set_accu_reg(&mut self, val: RegType) {
-        self.set_reg(ACCU_IDX, val).unwrap()
+        self.set_reg(Self::ACCU_IDX, val).unwrap()
     }
 }
 
 
-/** Flag related methods */
+/// Flag related methods
 impl CPU {
     /// Get the value of the specified flag
-    pub fn get_flag(&self, flag: CPUFlag) -> bool {
+    pub const fn get_flag(&self, flag: CPUFlag) -> bool {
         match flag {
             CPUFlag::Zero => { self.zero_flag }
             CPUFlag::Sign => { self.sign_flag }
@@ -1171,7 +1370,7 @@ impl CPU {
     }
 
     /// Sets the specified flag to `val`
-    pub fn set_flag(&mut self, flag: CPUFlag, val: bool) {
+    pub const fn set_flag(&mut self, flag: CPUFlag, val: bool) {
         match flag {
             CPUFlag::Zero => { self.zero_flag = val; }
             CPUFlag::Sign => { self.sign_flag = val; }
@@ -1180,28 +1379,27 @@ impl CPU {
     }
 
     /// Toggles the specified flag
-    pub fn toggle_flag(&mut self, flag: CPUFlag) {
+    pub const fn toggle_flag(&mut self, flag: CPUFlag) {
         self.set_flag(flag, !self.get_flag(flag));
     }
 
     /// Enables the specified flag
-    pub fn enable_flag(&mut self, flag: CPUFlag) {
+    pub const fn enable_flag(&mut self, flag: CPUFlag) {
         self.set_flag(flag, true);
     }
 
     /// Disables the specified flag
-    pub fn disable_flag(&mut self, flag: CPUFlag) {
+    pub const fn disable_flag(&mut self, flag: CPUFlag) {
         self.set_flag(flag, false);
     }
 
     /// Sets all the flags to `false`
-    pub fn reset_flags(&mut self) {
+    pub const fn reset_flags(&mut self) {
         self.disable_flag(CPUFlag::Overflow);
         self.disable_flag(CPUFlag::Zero);
         self.disable_flag(CPUFlag::Sign);
     }
 }
-
 
 
 /*****************************************************************************************/
@@ -1241,9 +1439,9 @@ impl CPU {
         }
 
         // Show the value of registers
-        for i in 0..GEN_REG_COUNT / 2 {
+        for i in 0..Self::GEN_REG_COUNT / 2 {
             let reg1 = i;
-            let reg2 = GEN_REG_COUNT / 2 + i;
+            let reg2 = Self::GEN_REG_COUNT / 2 + i;
             println!("Reg {}\t= {}\t\tReg {}\t= {}",
                      reg1,
                      self.get_reg(reg1).unwrap(),
