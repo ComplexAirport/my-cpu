@@ -61,7 +61,7 @@ pub struct RAM {
 }
 
 impl RAM {
-    pub fn new(size: usize) -> Self {
+    pub fn with_size(size: usize) -> Self {
         Self {
             mem: vec![0u8; size].into_boxed_slice(),
         }

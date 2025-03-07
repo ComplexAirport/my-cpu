@@ -9,13 +9,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_no_space() {
-        let mut ram = RAM::new(16);
+        let mut ram = RAM::with_size(16);
         ram.allocate(17).unwrap();
     }
 
     #[test]
     fn test_general_alloc_free() {
-        let mut ram = RAM::new(16);
+        let mut ram = RAM::with_size(16);
 
         let start = ram.allocate(16).unwrap();
 
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     fn test_contagious_alloc_free() {
-        let mut ram = RAM::new(16);
+        let mut ram = RAM::with_size(16);
         let start1 = ram.allocate(8).unwrap();
         let start2 = ram.allocate(8).unwrap();
 
@@ -51,7 +51,7 @@ mod tests {
     fn test_alloc_free_numbers() {
         const SIZE: usize = (1 + 2 + 4 + 8 + 16) * 2;
 
-        let mut ram = RAM::new(SIZE);
+        let mut ram = RAM::with_size(SIZE);
 
         let u1 = ram.alloc_u8(u8::MAX).unwrap();
         let u2 = ram.alloc_u16(u16::MAX).unwrap();
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_alloc_at_1() {
-        let mut ram = RAM::new(16);
+        let mut ram = RAM::with_size(16);
         ram.allocate_at(8, RamAddr(8)).unwrap();
         ram.allocate(8).unwrap();
 
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_alloc_at_2() {
-        let mut ram = RAM::new(24);
+        let mut ram = RAM::with_size(24);
         // Start:
         //          24
         // ........................
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_alloc_at_3() {
-        let mut ram = RAM::new(16);
+        let mut ram = RAM::with_size(16);
         ram.allocate_at(9, RamAddr(8)).unwrap();
     }
 }

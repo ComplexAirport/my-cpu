@@ -52,6 +52,14 @@ pub enum CPUError {
     #[error("Invalid flag number: {0}")]
     InvalidFlag(u8),
 
+    /// Read an address that is not a valid RAM address
+    #[error("Invalid RAM address: {0:?}")]
+    InvalidAddr(RamAddr),
+
+    /// Return address is not valid
+    #[error("Invalid return address: {0:?}")]
+    InvalidReturn(RamAddr),
+
     /// Received an invalid jump address (for example, the address is out of bounds)
     #[error("Invalid jump address: {0:?}")]
     InvalidJump(RamAddr),

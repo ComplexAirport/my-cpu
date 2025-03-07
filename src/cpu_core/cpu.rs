@@ -73,7 +73,10 @@ pub enum CPUInstr {
     Call, Ret,
 
     // Syscall instruction
-    Syscall
+    Syscall,
+
+    // Nop instruction - does literally nothing
+    Nop,
 }
 
 impl CPUInstr {
@@ -122,7 +125,9 @@ impl CPUInstr {
         CALL,
         RET,
 
-        SYSCALL
+        SYSCALL,
+
+        NOP
      );
 
     /// Represents the instruction in a byte
@@ -198,6 +203,8 @@ impl CPUInstr {
             CPUInstr::Ret => Self::RET,
 
             CPUInstr::Syscall => Self::SYSCALL,
+
+            CPUInstr::Nop => Self::NOP,
         }
     }
 
@@ -267,12 +274,14 @@ impl CPUInstr {
             Self::FLESS => Ok(CPUInstr::FLess),
             Self::FLESSEQUAL => Ok(CPUInstr::FLessEqual),
 
-            Self::PUSH => Ok(CPUInstr::Pop),
+            Self::PUSH => Ok(CPUInstr::Push),
             Self::POP => Ok(CPUInstr::Pop),
             Self::CALL => Ok(CPUInstr::Call),
             Self::RET => Ok(CPUInstr::Ret),
 
             Self::SYSCALL => Ok(CPUInstr::Syscall),
+
+            Self::NOP => Ok(CPUInstr::Nop),
 
             _ => Err(CPUError::InvalidInstruction(byte)),
         }
@@ -407,7 +416,7 @@ pub struct CPU {
     instruction_counter: usize,
 }
 
-/// Main CPU methods
+/// General CPU methods
 impl CPU {
     // Constants used in the CPU
 
@@ -422,7 +431,7 @@ impl CPU {
 
     /// Represents the maximum limit of bytes the stack can grow to regardless of storage
     /// Note: if available RAM is less than this constant, another value will be used
-    /// (refer to [`Self::new`] implementation for details)
+    /// (refer to [`Self::with_ram`] implementation for details)
     pub const STACK_SIZE_LIMIT: usize = 32 * 1024; // 32KB
 
     /// Represents the total amount of registers in the CPU
@@ -458,7 +467,7 @@ impl CPU {
     /// Represents the address of the first instruction for the CPU
     pub const START_ADDR: RamAddr = RamAddr(0x0_usize);
 
-    pub fn new(ram: RAM) -> Self {
+    pub fn with_ram(ram: RAM) -> Self {
         // Calculate the minimum address stack can grow to
         // The algorithm is `MIN(STACK_SIZE_LIMIT, ram.size() / 4)`
         let last_addr = ram.last_addr();
@@ -560,7 +569,7 @@ impl CPU {
             CPUInstr::Call => self.execute_call(),
             CPUInstr::Ret => self.execute_ret(),
             CPUInstr::Syscall => self.execute_syscall(),
-
+            CPUInstr::Nop => Ok(())
         };
 
         self.inc_instruction_counter();
@@ -801,19 +810,9 @@ impl CPU {
     /// - [`OperandType::Register`]
     /// - [`OperandType::MemoryAddress`]
     fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let op_t = self.read_operand_type()?;
-        let addr = match op_t {
-            OperandType::MemoryAddress => self.read_addr()?,
-            OperandType::Register => RamAddr(self.read_and_extract_reg()?.reinterpret::<Unsigned64>() as usize),
-            _ => return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t)))
-        };
-
-        if self.ram.is_valid_addr(addr) {
-            self.set_program_counter(addr);
-            Ok(())
-        } else {
-            Err(ErrorType::CPUError(CPUError::InvalidJump(addr)))
-        }
+        let addr = self.read_addr_for_jump()?;
+        self.set_program_counter(addr);
+        Ok(())
     }
     /// JumpIf op_t1 condition op_t2 jump_to
     ///
@@ -905,18 +904,66 @@ impl CPU {
         self.relational_op(|x: Float64, y: Float64| x <= y)
     }
 
+    /// Push op_t1 op1
+    fn execute_push(&mut self) -> Result<(), ErrorType> {
+        let value = self.extract_operand()?;
+        self.push_to_stack(value)?;
+        Ok(())
+    }
 
-    // Push op_t1 op1
-    fn execute_push(&mut self) -> Result<(), ErrorType> { todo!() }
+    /// Pop op1
+    /// `op` is one byte which represents a register number
+    fn execute_pop(&mut self) -> Result<(), ErrorType> {
+        let reg_num = self.read_reg()?;
+        // Reinterpret the bytes as `RegType` to be able to store in the register
+        let value: RegType = self.pop_from_stack()?.reinterpret();
+        self.set_reg(reg_num, value)?;
+        Ok(())
+    }
 
-    // Pop op
-    // `op` is one byte which represents a register number
-    fn execute_pop(&mut self) -> Result<(), ErrorType> { todo!() }
+    /// Call op_t1 op1
+    ///
+    /// note: op_t1 can ONLY be:
+    /// - [`OperandType::Register`]
+    /// - [`OperandType::MemoryAddress`]
+    fn execute_call(&mut self) -> Result<(), ErrorType> {
+        // Read a memory address to call
+        let addr = self.read_addr_for_jump()?;
 
-    fn execute_call(&mut self) -> Result<(), ErrorType> { todo!() }
+        println!("Will call to {addr:?}");
 
-    fn execute_ret(&mut self) -> Result<(), ErrorType> { todo!() }
+        // Get the return address (which is the memory address of the next instruction, which is
+        // the program counter since `read_addr_for_jump` incremented it)
+        let return_address = self.prog_counter.unwrap();
 
+        // Reinterpret the bytes
+        let addr_value: EightBytes = (return_address.0 as Unsigned64).reinterpret();
+
+        // Push the return address to the stack
+        self.push_to_stack(addr_value)?;
+
+        // Jump to the address
+        self.set_program_counter(addr);
+
+        Ok(())
+    }
+
+    /// Ret
+    fn execute_ret(&mut self) -> Result<(), ErrorType> {
+        // Read the return address from the stack
+        let addr_value = self.pop_from_stack()?;
+        println!("return value: {addr_value}");
+        // Reinterpret the bytes to u64 (which represents a memory address) and wrap inside RamAddr
+        let return_address = RamAddr(addr_value.reinterpret::<Unsigned64>() as usize);
+        println!("return address: {return_address:?}");
+        if self.ram.is_valid_addr(return_address) {
+            // Jump to the return address
+            self.set_program_counter(return_address);
+            Ok(())
+        } else {
+            Err(ErrorType::from(CPUError::InvalidReturn(return_address)))
+        }
+    }
 
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
@@ -1212,6 +1259,29 @@ impl CPU {
         self.inc_prog_counter(Self::OPERAND_TYPE_SIZE)?;
         Ok(operand_type)
     }
+
+    /// Reads an address for memory jumps. The difference between this method and
+    /// `read_addr` is that this method also allows to encounter a register number. \
+    /// If a register number is encountered, the method will extract the value of that register,
+    /// convert to `MemAddr` and return it. \
+    /// This method exists to use in `Jump` and `Call` instructions not to repeat code.
+    /// - Returns an error if the address is not a valid RAM address, so the return RamAddr is
+    ///     always valid
+    /// - Increments the program counter
+    pub fn read_addr_for_jump(&mut self) -> Result<RamAddr, ErrorType> {
+        let op_t = self.read_operand_type()?;
+        let addr = match op_t {
+            OperandType::MemoryAddress => self.read_addr()?,
+            OperandType::Register => RamAddr(self.read_and_extract_reg()?.reinterpret::<Unsigned64>() as usize),
+            _ => return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t)))
+        };
+
+        if self.ram.is_valid_addr(addr) {
+            Ok(addr)
+        } else {
+            Err(ErrorType::CPUError(CPUError::InvalidAddr(addr)))
+        }
+    }
 }
 
 
@@ -1219,15 +1289,12 @@ impl CPU {
 impl CPU {
     /// Pushes an 8-byte value to the stack
     pub fn push_to_stack(&mut self, value: EightBytes) -> Result<(), ErrorType> {
-        // Save current stack pointer
-        let write_to = self.get_sp();
-
         // Decrement the stack pointer, create more space
         self.dec_sp(8)?;
 
         // Write the value to the RAM
         let bytes = value.to_bytes();
-        self.ram.write_bytes(&bytes, write_to)?;
+        self.ram.write_bytes(&bytes, self.get_sp())?;
 
         Ok(())
     }
@@ -1406,7 +1473,7 @@ impl CPU {
 /* All code starting from this line is used only for debugging. It will be removed later */
 /*****************************************************************************************/
 pub const DBG_CLS: bool = false;     // TODO: delete
-pub const DBG_SLEEP: usize = 0;      // TODO: delete
+pub const DBG_SLEEP: usize = 5000;      // TODO: delete
 pub const DBG_PRINT: bool = true;    // TODO: delete
 
 
