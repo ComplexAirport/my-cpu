@@ -72,6 +72,10 @@ pub enum CPUInstr {
     Push, Pop,
     Call, Ret,
 
+    // Quickly store and load 8 bytes to/from a memory address
+    Store,  // Store 8 bytes to a memory address (stores at [address..address+8))
+    Load,   // Read 8 bytes from a memory address to a register
+
     // Syscall instruction
     Syscall,
 
@@ -124,6 +128,9 @@ impl CPUInstr {
         POP,
         CALL,
         RET,
+
+        STORE,
+        LOAD,
 
         SYSCALL,
 
@@ -202,6 +209,9 @@ impl CPUInstr {
             CPUInstr::Call => Self::CALL,
             CPUInstr::Ret => Self::RET,
 
+            CPUInstr::Store => Self::STORE,
+            CPUInstr::Load => Self::LOAD,
+
             CPUInstr::Syscall => Self::SYSCALL,
 
             CPUInstr::Nop => Self::NOP,
@@ -278,6 +288,9 @@ impl CPUInstr {
             Self::POP => Ok(CPUInstr::Pop),
             Self::CALL => Ok(CPUInstr::Call),
             Self::RET => Ok(CPUInstr::Ret),
+
+            Self::STORE => Ok(CPUInstr::Store),
+            Self::LOAD => Ok(CPUInstr::Load),
 
             Self::SYSCALL => Ok(CPUInstr::Syscall),
 
@@ -568,6 +581,8 @@ impl CPU {
             CPUInstr::Pop => self.execute_pop(),
             CPUInstr::Call => self.execute_call(),
             CPUInstr::Ret => self.execute_ret(),
+            CPUInstr::Store => self.execute_store(),
+            CPUInstr::Load => self.execute_load(),
             CPUInstr::Syscall => self.execute_syscall(),
             CPUInstr::Nop => Ok(())
         };
@@ -952,10 +967,8 @@ impl CPU {
     fn execute_ret(&mut self) -> Result<(), ErrorType> {
         // Read the return address from the stack
         let addr_value = self.pop_from_stack()?;
-        println!("return value: {addr_value}");
         // Reinterpret the bytes to u64 (which represents a memory address) and wrap inside RamAddr
         let return_address = RamAddr(addr_value.reinterpret::<Unsigned64>() as usize);
-        println!("return address: {return_address:?}");
         if self.ram.is_valid_addr(return_address) {
             // Jump to the return address
             self.set_program_counter(return_address);
@@ -963,6 +976,48 @@ impl CPU {
         } else {
             Err(ErrorType::from(CPUError::InvalidReturn(return_address)))
         }
+    }
+
+    /// Store op_t1 op1 op_t2 op2
+    ///
+    /// note: op_t2 can ONLY be [`OperandType::MemoryAddress`]
+    fn execute_store(&mut self) -> Result<(), ErrorType> {
+        let value = self.extract_operand()?;
+        let op_t = self.read_operand_type()?;
+        if op_t != OperandType::MemoryAddress {
+            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t)));
+        }
+
+        let dest_addr = self.read_addr()?;
+        self.ram.write_bytes(&value.to_bytes(), dest_addr)?;
+        Ok(())
+    }
+
+    /// Load op_t1 op1 op_t2 op2
+    ///
+    /// note: op_t1 can ONLY be [`OperandType::MemoryAddress`]
+    ///       op_t2 can ONLY be [`OperandType::Register`]
+    fn execute_load(&mut self) -> Result<(), ErrorType> {
+        let op_t1 = self.read_operand_type()?;
+        if op_t1 != OperandType::MemoryAddress { // Check if operand 1 is valid type
+            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t1)));
+        }
+        // Read the specified address
+        let source_addr = self.read_addr()?;
+
+        let op_t2 = self.read_operand_type()?;
+        if op_t2  != OperandType::Register { // Check if operand 2 is valid type
+            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t2)));
+        }
+        let dest_reg = self.read_reg()?;
+
+        // Read 8 bytes starting from that address
+        let bytes = self.ram.read_bytes::<8>(source_addr)?;
+        // Load the value
+        let value = RegType::from_bytes(bytes);
+
+        self.set_reg(dest_reg, value)?;
+        Ok(())
     }
 
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
