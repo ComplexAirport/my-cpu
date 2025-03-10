@@ -300,8 +300,6 @@ impl Assembler {
     /// so the jump instructions' real addresses can be resolved at the end.
     pub fn add_label(&mut self, sym: Label) {
         let relative_address = self.total_size();
-        println!("{:?}", self.instructions);
-        println!("total size was {relative_address}");
         self.symbol_table.insert(sym.0, relative_address);
     }
 

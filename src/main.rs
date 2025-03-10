@@ -6,17 +6,36 @@ use my_cpu::my_assembler::base_assembler::{*};
 fn main() {
     let mut asm = Assembler::new();
 
-    // Store 3.14159265358979323846264338327950288 0xf8
-    asm.add_instr(CPUInstr::Store);
-    asm.add_float(std::f64::consts::PI);
-    asm.add_addr(RamAddr(256 - 8));
+    // loop1:
+    asm.add_label(Label::from("f1"));
+    
+    asm.add_instr(CPUInstr::ULess);
+    asm.add_reg(1);
+    asm.add_imm(1024);
 
-    // Load 0xf8 0
-    asm.add_instr(CPUInstr::Load);
-    asm.add_addr(RamAddr(256 - 8));
-    asm.add_reg(0);
+    asm.add_jump_if_not(Operand::Register(CPU::ACCU_IDX), Label::from("exit"));
 
-    let mut ram = RAM::with_size(256);
+    asm.add_instr(CPUInstr::UAdd);
+    asm.add_reg(1);
+    asm.add_imm(1);
+
+    asm.add_instr(CPUInstr::Set);
+    asm.add_reg(1);
+    asm.add_accu();
+
+    // JumpIf accu loop1
+    asm.add_call(Label::from("f1"));
+
+    asm.add_label(Label::from("exit"));
+    asm.add_instr(CPUInstr::UAdd);
+    asm.add_imm(10);
+    asm.add_imm(20);
+    asm.add_instr(CPUInstr::Halt);
+
+
+    let mut ram = RAM::with_size(32 * 1024);
+
+    println!("{:?}", asm.as_bytes(RamAddr(0)));
 
     if let Err(e) = asm.write_to_ram(&mut ram, RamAddr(0)) {
         eprintln!("{}", e);

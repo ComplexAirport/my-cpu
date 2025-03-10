@@ -487,6 +487,9 @@ impl CPU {
         let max_stack_size = Self::STACK_SIZE_LIMIT.min(ram.size() / 4);
         let min_stack_addr = last_addr.sub(max_stack_size).unwrap();
 
+        dbg!(max_stack_size);
+        dbg!(min_stack_addr);
+
         Self {
             ram,
             registers: [0 as RegType; Self::REG_COUNT],
@@ -835,12 +838,7 @@ impl CPU {
     /// - [`OperandType::Register`]
     /// - [`OperandType::MemoryAddress`]
     fn execute_jump_if(&mut self) -> Result<(), ErrorType> {
-        let condition = self.extract_operand()?.as_bool();
-        if condition {
-            self.execute_jump()
-        } else {
-            Ok(())
-        }
+        self.conditional_jump(|x| x.as_bool())
     }
     /// JumpIfNot op_t1 condition op_t2 jump_to
     ///
@@ -848,12 +846,7 @@ impl CPU {
     /// - [`OperandType::Register`]
     /// - [`OperandType::MemoryAddress`]
     fn execute_jump_if_not(&mut self) -> Result<(), ErrorType> {
-        let condition = self.extract_operand()?.as_bool();
-        if !condition {
-            self.execute_jump()
-        } else {
-            Ok(())
-        }
+        self.conditional_jump(|x| !x.as_bool())
     }
 
     /// UEquals op_t1 op1 op_t2 op2
@@ -949,8 +942,6 @@ impl CPU {
     fn execute_call(&mut self) -> Result<(), ErrorType> {
         // Read a memory address to call
         let addr = self.read_addr_for_jump()?;
-
-        println!("Will call to {addr:?}");
 
         // Get the return address (which is the memory address of the next instruction, which is
         // the program counter since `read_addr_for_jump` incremented it)
@@ -1170,8 +1161,8 @@ impl CPU {
         T: Reinterpret64 + SignClassifiable,
         F: Fn(T, T) -> bool
     {
-        let lhs = self.extract_operand()?.reinterpret();
-        let rhs = self.extract_operand()?.reinterpret();
+        let lhs: T = self.extract_operand()?.reinterpret();
+        let rhs: T = self.extract_operand()?.reinterpret();
         let result = op(lhs, rhs);
         self.handle_bool_result(result);
         Ok(())
@@ -1224,6 +1215,30 @@ impl CPU {
         } else {
             self.set_accu_reg(1); // `true` is implicitly converted to `1`
         }
+    }
+
+
+    /// Helper method for conditional Jump instructions. Accepts a function which takes an operand ([`EightBytes`])
+    /// and returns `bool`, indicating whether the jump should happen or not.
+    /// ## Usage
+    /// ```rust
+    /// |x| !x.as_bool(); // for JumpIfNot instruction
+    /// |x| x.as_bool();  // for JumpIf instruction
+    /// ```
+    /// - Does NOT set any flags
+    fn conditional_jump<F>(&mut self, op: F) -> Result<(), ErrorType>
+    where F: Fn(EightBytes) -> bool {
+        let operand = self.extract_operand()?;
+
+        // Read the jump address regardless of whether we are going to jump to it or not
+        // This is to adjust program counter to the next instruction if the jump doesn't happen
+        let mem_addr = self.read_addr_for_jump()?;
+
+        if op(operand) {
+            self.set_program_counter(mem_addr);
+        }
+
+        Ok(())
     }
 }
 
@@ -1538,8 +1553,8 @@ impl CPU {
 /* All code starting from this line is used only for debugging. It will be removed later */
 /*****************************************************************************************/
 pub const DBG_CLS: bool = false;      // TODO: delete
-pub const DBG_SLEEP: usize = 2000;   // TODO: delete
-pub const DBG_PRINT: bool = true;    // TODO: delete
+pub const DBG_SLEEP: usize = 0;   // TODO: delete
+pub const DBG_PRINT: bool = false;    // TODO: delete
 
 
 /** Prints the cpu state. NOTE: Only for debugging purposes */
