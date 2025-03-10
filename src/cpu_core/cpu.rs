@@ -926,9 +926,14 @@ impl CPU {
         Ok(())
     }
 
-    /// Pop op1
+    /// Pop op_t1 op1
     /// `op` is one byte which represents a register number
     fn execute_pop(&mut self) -> Result<(), ErrorType> {
+        let op_t1 = self.read_operand_type()?;
+        if op_t1 != OperandType::Register {
+            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t1)))
+        }
+
         let reg_num = self.read_reg()?;
         // Reinterpret the bytes as `RegType` to be able to store in the register
         let value: RegType = self.pop_from_stack()?.reinterpret();
@@ -1019,6 +1024,7 @@ impl CPU {
         self.set_reg(dest_reg, value)?;
         Ok(())
     }
+
 
     fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
@@ -1356,17 +1362,21 @@ impl CPU {
 
     /// Pops an 8-byte value from the stack
     pub fn pop_from_stack(&mut self) -> Result<EightBytes, ErrorType> {
-        // Save current stack pointer
+        // Get current stack pointer address
         let read_from = self.get_sp();
-
-        // Increment the stack pointer, erase the value from the stack
-        self.inc_sp(8)?;
 
         // Read the value from the RAM
         let bytes = self.ram.read_bytes::<8>(read_from)?;
 
         // Convert the bytes to `EightBytes`
         let value = EightBytes::from_bytes(bytes);
+
+        // Increment the stack pointer, erase the value from the stack
+        self.inc_sp(8)?;
+
+        // Clean up the erased section, fill with zeros
+        // TODO: maybe remove this line?
+        self.ram.write_bytes(&[0u8; 8], read_from)?;
 
         Ok(value)
     }
@@ -1527,8 +1537,8 @@ impl CPU {
 /*****************************************************************************************/
 /* All code starting from this line is used only for debugging. It will be removed later */
 /*****************************************************************************************/
-pub const DBG_CLS: bool = false;     // TODO: delete
-pub const DBG_SLEEP: usize = 5000;      // TODO: delete
+pub const DBG_CLS: bool = false;      // TODO: delete
+pub const DBG_SLEEP: usize = 2000;   // TODO: delete
 pub const DBG_PRINT: bool = true;    // TODO: delete
 
 

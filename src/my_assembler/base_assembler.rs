@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 pub use crate::cpu_core::cpu::{*};
 
-
 /// Represents an operand
 /// In our CPU "language", there are currently four types of operand (as can be seen in
 /// [`OperandType`]). This enum represents the type of the operand and the value
@@ -199,7 +198,7 @@ impl Assembler {
     /// Finalize the assembly "code" and return the bytes (readable by CPU). \
     /// This operation:
     /// - Resolves all symbols (based on `start_addr` field which represents the final start address
-    /// of the instructions in RAM)
+    ///     of the instructions in RAM)
     /// - Converts all `ResolvedUnit`-s into bytes
     /// - Returns those bytes
     pub fn as_bytes(&mut self, start_addr: RamAddr) -> Vec<u8> {

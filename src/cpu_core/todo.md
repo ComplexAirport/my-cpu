@@ -19,4 +19,4 @@ from registers to 8 memory addresses
 
 Similarly, introduce new LoadMem instruction with which we can quickly
 load 8 bytes from memory into a register
-- [ ] `LoadMem [source_addr] [dest_reg]`
+- [x] `LoadMem [source_addr] [dest_reg]`
