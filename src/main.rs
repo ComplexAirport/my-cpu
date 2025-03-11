@@ -34,10 +34,10 @@ fn main() {
 
     *** function body ***
     offset sb +2; // Get first argument
-    set r0 _;
+    load r0 _;
 
     offset sb +3; // Get second argument
-    set r1 _;
+    load r1 _;
 
     add r0 r1;   // Add two registers
     set r0 _;   // Store the result
@@ -82,7 +82,7 @@ fn main() {
 
     asm.add_instr(Offset); // access the first argument
     asm.add_sb();
-    asm.add_imm(2);
+    asm.add_imm(2 * 8);
     asm.add_instr(Load);
     asm.add_accu();
     asm.add_reg(0);

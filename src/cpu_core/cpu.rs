@@ -993,12 +993,19 @@ impl CPU {
     ///
     /// note:
     /// - op_t1 can ONLY be [`OperandType::MemoryAddress`] or [`OperandType::Register`]
+    /// - **op2 is interpreted as bits count, not byte**
     fn execute_offset(&mut self) -> Result<(), ErrorType> {
         let mut addr = self.extract_addr()?;
-        let offset: Signed64 = self.extract_operand()?.reinterpret::<Signed64>() * 8;
+        let offset: Signed64 = self.extract_operand()?.reinterpret::<Signed64>();
 
-        let (absolute_offset, overflowed) = offset.overflowing_abs();
-        let absolute_offset = absolute_offset as usize + 1;
+        if offset == i64::MIN {
+            // todo: maybe handle this in more graceful way?
+            self.enable_flag(CPUFlag::Overflow);
+            self.set_accu_reg(RegType::MAX);
+            return Ok(());
+        }
+
+        let absolute_offset = offset.unsigned_abs().wrapping_add(1) as usize;
 
         // Do the offset
         if offset.is_negative() {
@@ -1012,11 +1019,6 @@ impl CPU {
 
         // Set the accumulator register
         self.set_accu_reg(result);
-
-        // If the operation overflowed, set the according flag
-        if overflowed {
-            self.enable_flag(CPUFlag::Overflow);
-        }
 
         Ok(())
     }
@@ -1437,6 +1439,11 @@ impl CPU {
 
         // Increment the stack pointer, erase the value from the stack
         self.inc_sp(8)?;
+
+        // todo: maybe remove this section later?
+        // currently it's required so the code doesn't accidentally start executing wrong thing
+        // however, is `set_sp()`, this case is not handled
+        self.ram.write_bytes(&[0u8; 8], read_from)?;
 
         Ok(value)
     }
