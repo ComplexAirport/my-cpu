@@ -32,14 +32,14 @@ impl RamAddr {
     /// Increment the address (overflow safe)
     pub fn inc(&mut self, rhs: usize) -> Result<(), RAMError> {
         self.0 = self.0.checked_add(rhs)
-            .ok_or_else(|| RAMError::AddressOverflow(*self))?;
+            .ok_or(RAMError::AddressOverflow(*self))?;
         Ok(())
     }
 
     /// Decrement the address (overflow safe)
     pub fn dec(&mut self, rhs: usize) -> Result<(), RAMError> {
         self.0 = self.0.checked_sub(rhs)
-            .ok_or_else(|| RAMError::AddressOverflow(*self))?;
+            .ok_or(RAMError::AddressOverflow(*self))?;
         Ok(())
     }
 

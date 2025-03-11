@@ -260,6 +260,16 @@ impl Assembler {
         self.add_reg(CPU::GEN_REG_COUNT);
     }
 
+    /// Adds the sp register to the instructions
+    pub fn add_sp(&mut self) {
+        self.add_reg(CPU::SP_IDX);
+    }
+
+    /// Adds the sb register to the instructions
+    pub fn add_sb(&mut self) {
+        self.add_reg(CPU::SB_IDX);
+    }
+
     /// Adds a [`CPUFlag`] to the instructions
     pub fn add_flag(&mut self, flag: CPUFlag) {
         self.add_resolved(ResolvedUnit::Operand(Operand::Flag(flag)));

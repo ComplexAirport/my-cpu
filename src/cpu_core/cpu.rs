@@ -69,8 +69,10 @@ pub enum CPUInstr {
     FLessEqual,         // <=
 
     // Stack and function related instructions
-    Push, Pop,
-    Call, Ret,
+    Push, Pop, // Push and pop values to the stack
+    Call, Ret, // Call and return from functions
+
+    Offset,   // Offsets a memory address and stores the result in the accu
 
     // Quickly store and load 8 bytes to/from a memory address
     Store,  // Store 8 bytes to a memory address (stores at [address..address+8))
@@ -128,6 +130,8 @@ impl CPUInstr {
         POP,
         CALL,
         RET,
+
+        OFFSET,
 
         STORE,
         LOAD,
@@ -212,6 +216,8 @@ impl CPUInstr {
             CPUInstr::Store => Self::STORE,
             CPUInstr::Load => Self::LOAD,
 
+            CPUInstr::Offset => Self::OFFSET,
+
             CPUInstr::Syscall => Self::SYSCALL,
 
             CPUInstr::Nop => Self::NOP,
@@ -288,6 +294,8 @@ impl CPUInstr {
             Self::POP => Ok(CPUInstr::Pop),
             Self::CALL => Ok(CPUInstr::Call),
             Self::RET => Ok(CPUInstr::Ret),
+
+            Self::OFFSET => Ok(CPUInstr::Offset),
 
             Self::STORE => Ok(CPUInstr::Store),
             Self::LOAD => Ok(CPUInstr::Load),
@@ -452,6 +460,13 @@ impl CPU {
     /// - 1 special accumulator
     pub const REG_COUNT: usize = Self::GEN_REG_COUNT + 1;
 
+    /// Represents the "index" of SP register. Although in our struct it's stored separately,
+    /// we still refer to it by its "index" for simplicity purpose
+    pub const SP_IDX: usize = Self::ACCU_IDX + 1;
+
+    /// Represents the "index" of SB register. Although in our struct it's stored separately,
+    /// we still refer to it by its "index" for simplicity purpose
+    pub const SB_IDX: usize = Self::SP_IDX + 1;
 
     /***********************************************************/
     /* Amount of bytes of each type of operands                */
@@ -486,9 +501,6 @@ impl CPU {
         let last_addr = ram.last_addr();
         let max_stack_size = Self::STACK_SIZE_LIMIT.min(ram.size() / 4);
         let min_stack_addr = last_addr.sub(max_stack_size).unwrap();
-
-        dbg!(max_stack_size);
-        dbg!(min_stack_addr);
 
         Self {
             ram,
@@ -584,6 +596,7 @@ impl CPU {
             CPUInstr::Pop => self.execute_pop(),
             CPUInstr::Call => self.execute_call(),
             CPUInstr::Ret => self.execute_ret(),
+            CPUInstr::Offset => self.execute_offset(),
             CPUInstr::Store => self.execute_store(),
             CPUInstr::Load => self.execute_load(),
             CPUInstr::Syscall => self.execute_syscall(),
@@ -974,6 +987,40 @@ impl CPU {
         }
     }
 
+    /// Offset op_t1 op1 op_t2 op2
+    ///
+    /// - sets the Overflow flag if the offsetting overflowed
+    ///
+    /// note:
+    /// - op_t1 can ONLY be [`OperandType::MemoryAddress`]
+    fn execute_offset(&mut self) -> Result<(), ErrorType> {
+        let op_t1 = self.read_operand_type()?;
+        if op_t1 != OperandType::MemoryAddress {
+            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t1)));
+        }
+        let mut addr = self.read_addr()?;
+        let offset: Signed64 = self.extract_operand()?.reinterpret();
+
+        let (absolute_offset, overflowed) = offset.overflowing_abs();
+
+        // Do the offset
+        if offset.is_negative() {
+            addr.dec(absolute_offset as usize)?;
+        } else {
+            addr.inc(absolute_offset as usize)?;
+        }
+
+        // Set the accumulator register
+        self.set_accu_reg(addr_to_reg_type(addr));
+
+        // If the operation overflowed, set the according flag
+        if overflowed {
+            self.enable_flag(CPUFlag::Overflow);
+        }
+
+        Ok(())
+    }
+
     /// Store op_t1 op1 op_t2 op2
     ///
     /// note: op_t2 can ONLY be [`OperandType::MemoryAddress`]
@@ -1348,7 +1395,7 @@ impl CPU {
         let op_t = self.read_operand_type()?;
         let addr = match op_t {
             OperandType::MemoryAddress => self.read_addr()?,
-            OperandType::Register => RamAddr(self.read_and_extract_reg()?.reinterpret::<Unsigned64>() as usize),
+            OperandType::Register => reg_type_to_addr(self.read_and_extract_reg()?),
             _ => return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t)))
         };
 
@@ -1368,17 +1415,24 @@ impl CPU {
         // Decrement the stack pointer, create more space
         self.dec_sp(8)?;
 
+        // Since stack grows downwards, the byte exactly at SP is NOT included in the stack
+        // So the whole stack is (SP; end]
+        // That's why we add 1 to SP for the writing operation
+        let write_addr = self.get_sp().add(1)?;
+
         // Write the value to the RAM
         let bytes = value.to_bytes();
-        self.ram.write_bytes(&bytes, self.get_sp())?;
+        self.ram.write_bytes(&bytes, write_addr)?;
 
         Ok(())
     }
 
     /// Pops an 8-byte value from the stack
     pub fn pop_from_stack(&mut self) -> Result<EightBytes, ErrorType> {
-        // Get current stack pointer address
-        let read_from = self.get_sp();
+        // Since stack grows downwards, the byte exactly at SP is NOT included in the stack
+        // So the whole stack is (SP; end]
+        // That's why we add 1 to SP for the reading operation
+        let read_from = self.get_sp().add(1)?;
 
         // Read the value from the RAM
         let bytes = self.ram.read_bytes::<8>(read_from)?;
@@ -1474,20 +1528,31 @@ impl CPU {
 /// General register related methods
 impl CPU {
     /// Returns the value of the `n`-th register if it exists, Error otherwise
-    pub const fn get_reg(&self, n: usize) -> Result<RegType, CPUError> {
-        if n < Self::REG_COUNT {
+    pub fn get_reg(&self, n: usize) -> Result<RegType, CPUError> {
+        if n < Self::REG_COUNT {  // Set a general purpose register
             Ok(self.registers[n])
-        } else {
+        } else if n == Self::SP_IDX { // Set the SP register
+            Ok(addr_to_reg_type(self.get_sp()))
+        } else if n == Self::SB_IDX { // Set the SB register
+            Ok(addr_to_reg_type(self.get_sb()))
+        }  else {
             Err(CPUError::InvalidRegister(n))
         }
     }
 
-    /// Sets the value of `n`-th register to `val` if it exists, Error otherwise
-    pub const fn set_reg(&mut self, n: usize, val: RegType) -> Result<(), CPUError> {
-        if n < Self::REG_COUNT {
+    /// Sets the value of `n`-th register to `val` if it exists, Error otherwise.
+    /// - Note: Can also set the SP and SB registers by index
+    pub fn set_reg(&mut self, n: usize, val: RegType) -> Result<(), CPUError> {
+        if n < Self::REG_COUNT {  // Set a general purpose register
             self.registers[n] = val;
             Ok(())
-        } else {
+        } else if n == Self::SP_IDX { // Set the SP register
+            self.set_sp(reg_type_to_addr(val));
+            Ok(())
+        } else if n == Self::SB_IDX { // Set the SB register
+            self.set_sb(reg_type_to_addr(val));
+            Ok(())
+        }  else {
             Err(CPUError::InvalidRegister(n))
         }
     }
@@ -1549,12 +1614,28 @@ impl CPU {
 }
 
 
+/// Converts a [`RegType`] to [`RamAddr`] by reinterpreting its bytes. Since the general-purpose
+/// registers' data type and [`RamAddr`]'s underlying data types are different, when we need the
+/// conversion we will call this function
+pub fn reg_type_to_addr(val: RegType) -> RamAddr {
+    RamAddr(val.reinterpret::<Unsigned64>() as usize)
+}
+
+/// Converts a [`RamAddr`] to [`RegType`] by reinterpreting its bytes. Since the general-purpose
+/// registers' data type and [`RamAddr`]'s underlying data types are different, when we need the
+// conversion we will call this function
+pub fn addr_to_reg_type(val: RamAddr) -> RegType {
+    (val.0 as Unsigned64).reinterpret::<RegType>()
+}
+
+
+
 /*****************************************************************************************/
 /* All code starting from this line is used only for debugging. It will be removed later */
 /*****************************************************************************************/
 pub const DBG_CLS: bool = false;      // TODO: delete
 pub const DBG_SLEEP: usize = 0;   // TODO: delete
-pub const DBG_PRINT: bool = false;    // TODO: delete
+pub const DBG_PRINT: bool = true;    // TODO: delete
 
 
 /** Prints the cpu state. NOTE: Only for debugging purposes */
@@ -1572,15 +1653,22 @@ impl CPU {
                 .unwrap();
         }
 
+        let sp = self.get_sp();
 
-        println!("Instruction {}\n", self.instruction_counter);
+        println!("Instruction {}", self.instruction_counter);
+        println!("Executed: {:?}\n", self.instr_reg);
 
         // Show the ram
-        for chunk  in self.ram.mem.chunks(16) {
+        for (i, chunk)  in self.ram.mem.chunks(16).enumerate() {
             let mut s = String::new();
-            for i in chunk {
-                s.push_str(i.to_string().as_str());
+            for (j, byte) in chunk.iter().enumerate() {
+                s.push_str(byte.to_string().as_str());
                 s.push(' ');
+
+                if RamAddr(i * 16 + j) == sp {
+                    s.push('|');
+                    s.push(' ');
+                }
             }
             println!("{}", s);
         }
@@ -1597,13 +1685,14 @@ impl CPU {
             );
         }
 
-        println!("Accu\t= {}", self.get_accu_reg());
-
-        println!("Overflow:\t{}", self.get_flag(CPUFlag::Overflow));
-        println!("Zero:\t\t{}", self.get_flag(CPUFlag::Zero));
-        println!("Sign:\t\t{}", self.get_flag(CPUFlag::Sign));
-
-        println!("Executed instruction: {:?}", self.instr_reg);
+        println!("Accu = {}", self.get_accu_reg());
+        println!("SP = {:?}", self.get_sp());
+        println!("SB = {:?}", self.get_sb());
+        println!("Overflow: {}\t\tZero: {}\t\tSign: {}\n",
+                 self.get_flag(CPUFlag::Overflow),
+                 self.get_flag(CPUFlag::Zero),
+                 self.get_flag(CPUFlag::Sign)
+        );
     }
 }
 

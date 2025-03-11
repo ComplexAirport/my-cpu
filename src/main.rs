@@ -2,41 +2,107 @@
 #[macro_use]
 
 use my_cpu::my_assembler::base_assembler::{*};
+use my_cpu::cpu_core::cpu::CPUInstr::{*};
 
 fn main() {
     let mut asm = Assembler::new();
 
-    // loop1:
-    asm.add_label(Label::from("f1"));
-    
-    asm.add_instr(CPUInstr::ULess);
-    asm.add_reg(1);
-    asm.add_imm(1024);
+    /*
+    ***   argument 1    ***
+    ***   argument 2    ***
+    ...
+    ***  return address ***
+    ***    saved sb     ***  <- sb
+    ...
 
-    asm.add_jump_if_not(Operand::Register(CPU::ACCU_IDX), Label::from("exit"));
+    *** local variable 1 ***
+    *** local variable 2 ***
 
-    asm.add_instr(CPUInstr::UAdd);
-    asm.add_reg(1);
+    GetBp +0 -> old base pointer address
+    GetBp +1 -> return address
+
+    GetBp +2 -> first argument
+    GetBp +3 -> second argument
+
+    GetBp -1 -> local variable 1
+    GetBp -2 -> local variable 2
+
+    function:
+    // prologue:
+    push sb;    // save old base pointer
+    set sb sp;  // Set current base pointer to old base pointer address
+
+    *** function body ***
+    offset sb +2; // Get first argument
+    set r0 _;
+
+    offset sb +3; // Get second argument
+    set r1 _;
+
+    add r0 r1;   // Add two registers
+    set r0 _;   // Store the result
+
+    // epilogue:
+    set sp sb; // Move stack pointer to base pointer address (erase all local variables)
+    pop sb;   // Restore old base pointer address
+    ret;
+
+
+
+    // IDEAS
+    offset_addr sb -1;
+    load _;
+
+    offset_addr sb -2;
+    load _;
+
+    */
+
+    asm.add_call(Label::from("main"));
+    asm.add_instr(Halt);
+
+
+    asm.add_label(Label::from("main"));
+    // prologue
+    asm.add_instr(Push); // push sb;
+    asm.add_sb();
+
+    asm.add_instr(Set); // set sb sp;
+    asm.add_sb();
+    asm.add_sp();
+
+
+    asm.add_label(Label::from("loop"));
+
+    asm.add_instr(UAdd); // uadd r0 1
+    asm.add_reg(0);
     asm.add_imm(1);
 
-    asm.add_instr(CPUInstr::Set);
-    asm.add_reg(1);
+    asm.add_instr(Set); // set r0 _
+    asm.add_reg(0);
     asm.add_accu();
 
-    // JumpIf accu loop1
-    asm.add_call(Label::from("f1"));
+    asm.add_instr(ULess); // uless r0 10
+    asm.add_reg(0);
+    asm.add_imm(1000);
 
-    asm.add_label(Label::from("exit"));
-    asm.add_instr(CPUInstr::UAdd);
-    asm.add_imm(10);
-    asm.add_imm(20);
-    asm.add_instr(CPUInstr::Halt);
+    asm.add_jump_if(Operand::Register(CPU::ACCU_IDX), Label::from("loop"));
 
 
-    let mut ram = RAM::with_size(32 * 1024);
+    // epilogue
+    asm.add_instr(Set); // set sp sb;
+    asm.add_sp();
+    asm.add_sb();
+
+    asm.add_instr(Pop); // pop sb;
+    asm.add_sb();
+
+    asm.add_instr(Ret);
+
+
+    let mut ram = RAM::with_size(128);
 
     println!("{:?}", asm.as_bytes(RamAddr(0)));
-
     if let Err(e) = asm.write_to_ram(&mut ram, RamAddr(0)) {
         eprintln!("{}", e);
         return;
