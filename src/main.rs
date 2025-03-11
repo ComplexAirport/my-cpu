@@ -58,6 +58,9 @@ fn main() {
 
     */
 
+    asm.add_instr(Push);
+    asm.add_imm(69);
+
     asm.add_call(Label::from("main"));
     asm.add_instr(Halt);
 
@@ -71,23 +74,18 @@ fn main() {
     asm.add_sb();
     asm.add_sp();
 
+    // Main code
+    asm.add_instr(Push); // Local variable 1
+    asm.add_imm(123);
+    asm.add_instr(Push); // Local variable 2
+    asm.add_imm(123);
 
-    asm.add_label(Label::from("loop"));
-
-    asm.add_instr(UAdd); // uadd r0 1
-    asm.add_reg(0);
-    asm.add_imm(1);
-
-    asm.add_instr(Set); // set r0 _
-    asm.add_reg(0);
+    asm.add_instr(Offset); // access the first argument
+    asm.add_sb();
+    asm.add_imm(2);
+    asm.add_instr(Load);
     asm.add_accu();
-
-    asm.add_instr(ULess); // uless r0 10
     asm.add_reg(0);
-    asm.add_imm(1000);
-
-    asm.add_jump_if(Operand::Register(CPU::ACCU_IDX), Label::from("loop"));
-
 
     // epilogue
     asm.add_instr(Set); // set sp sb;
@@ -100,7 +98,7 @@ fn main() {
     asm.add_instr(Ret);
 
 
-    let mut ram = RAM::with_size(128);
+    let mut ram = RAM::with_size(200);
 
     println!("{:?}", asm.as_bytes(RamAddr(0)));
     if let Err(e) = asm.write_to_ram(&mut ram, RamAddr(0)) {

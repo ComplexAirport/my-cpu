@@ -841,7 +841,7 @@ impl CPU {
     /// - [`OperandType::Register`]
     /// - [`OperandType::MemoryAddress`]
     fn execute_jump(&mut self) -> Result<(), ErrorType> {
-        let addr = self.read_addr_for_jump()?;
+        let addr = self.extract_addr()?;
         self.set_program_counter(addr);
         Ok(())
     }
@@ -954,7 +954,7 @@ impl CPU {
     /// - [`OperandType::MemoryAddress`]
     fn execute_call(&mut self) -> Result<(), ErrorType> {
         // Read a memory address to call
-        let addr = self.read_addr_for_jump()?;
+        let addr = self.extract_addr()?;
 
         // Get the return address (which is the memory address of the next instruction, which is
         // the program counter since `read_addr_for_jump` incremented it)
@@ -992,26 +992,26 @@ impl CPU {
     /// - sets the Overflow flag if the offsetting overflowed
     ///
     /// note:
-    /// - op_t1 can ONLY be [`OperandType::MemoryAddress`]
+    /// - op_t1 can ONLY be [`OperandType::MemoryAddress`] or [`OperandType::Register`]
     fn execute_offset(&mut self) -> Result<(), ErrorType> {
-        let op_t1 = self.read_operand_type()?;
-        if op_t1 != OperandType::MemoryAddress {
-            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t1)));
-        }
-        let mut addr = self.read_addr()?;
-        let offset: Signed64 = self.extract_operand()?.reinterpret();
+        let mut addr = self.extract_addr()?;
+        let offset: Signed64 = self.extract_operand()?.reinterpret::<Signed64>() * 8;
 
         let (absolute_offset, overflowed) = offset.overflowing_abs();
+        let absolute_offset = absolute_offset as usize + 1;
 
         // Do the offset
         if offset.is_negative() {
-            addr.dec(absolute_offset as usize)?;
+            addr.dec(absolute_offset)?;
         } else {
-            addr.inc(absolute_offset as usize)?;
+            addr.inc(absolute_offset)?;
         }
 
+        println!("Offset addr is {addr:?}");
+        let result = addr_to_reg_type(addr);
+
         // Set the accumulator register
-        self.set_accu_reg(addr_to_reg_type(addr));
+        self.set_accu_reg(result);
 
         // If the operation overflowed, set the according flag
         if overflowed {
@@ -1038,15 +1038,10 @@ impl CPU {
 
     /// Load op_t1 op1 op_t2 op2
     ///
-    /// note: op_t1 can ONLY be [`OperandType::MemoryAddress`]
+    /// note: op_t1 can ONLY be [`OperandType::MemoryAddress`] or [`OperandType::Register`]
     ///       op_t2 can ONLY be [`OperandType::Register`]
     fn execute_load(&mut self) -> Result<(), ErrorType> {
-        let op_t1 = self.read_operand_type()?;
-        if op_t1 != OperandType::MemoryAddress { // Check if operand 1 is valid type
-            return Err(ErrorType::from(CPUError::OperandTypeNotAllowed(op_t1)));
-        }
-        // Read the specified address
-        let source_addr = self.read_addr()?;
+        let source_addr = self.extract_addr()?;
 
         let op_t2 = self.read_operand_type()?;
         if op_t2  != OperandType::Register { // Check if operand 2 is valid type
@@ -1279,7 +1274,7 @@ impl CPU {
 
         // Read the jump address regardless of whether we are going to jump to it or not
         // This is to adjust program counter to the next instruction if the jump doesn't happen
-        let mem_addr = self.read_addr_for_jump()?;
+        let mem_addr = self.extract_addr()?;
 
         if op(operand) {
             self.set_program_counter(mem_addr);
@@ -1383,7 +1378,7 @@ impl CPU {
         Ok(operand_type)
     }
 
-    /// Reads an address for memory jumps. The difference between this method and
+    /// Reads an address directly or from a register. The difference between this method and
     /// `read_addr` is that this method also allows to encounter a register number. \
     /// If a register number is encountered, the method will extract the value of that register,
     /// convert to `MemAddr` and return it. \
@@ -1391,7 +1386,7 @@ impl CPU {
     /// - Returns an error if the address is not a valid RAM address, so the return RamAddr is
     ///     always valid
     /// - Increments the program counter
-    pub fn read_addr_for_jump(&mut self) -> Result<RamAddr, ErrorType> {
+    pub fn extract_addr(&mut self) -> Result<RamAddr, ErrorType> {
         let op_t = self.read_operand_type()?;
         let addr = match op_t {
             OperandType::MemoryAddress => self.read_addr()?,
@@ -1442,10 +1437,6 @@ impl CPU {
 
         // Increment the stack pointer, erase the value from the stack
         self.inc_sp(8)?;
-
-        // Clean up the erased section, fill with zeros
-        // TODO: maybe remove this line?
-        self.ram.write_bytes(&[0u8; 8], read_from)?;
 
         Ok(value)
     }
