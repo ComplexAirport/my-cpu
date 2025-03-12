@@ -3,5 +3,10 @@ name = "my_cpu"
 version = "0.1.1"
 edition = "2021"
 
+[build-dependencies]
+lalrpop = "0.22.1"
+
 [dependencies]
-thiserror = "2.0.11"
+thiserror = "2.0.12"
+lalrpop-util = { version = "0.22.1", features = ["lexer", "unicode"] }
+

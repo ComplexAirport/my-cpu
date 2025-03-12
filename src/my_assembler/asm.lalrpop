@@ -1,0 +1,155 @@
+use std::str::FromStr;
+use crate::my_assembler::ast::{*};
+
+grammar;
+
+pub Program: Vec<Statement> = {
+	<Statement*> => <>,
+};
+
+Statement: Statement = {
+    "halt" => Statement::Instruction(CPUInstr::Halt, vec![]),
+
+    "set"  <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::Set, vec![op1, op2]),
+
+    // Unsigned instructions
+    "uadd" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UAdd, vec![op1, op2]),
+    "usub" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::USub, vec![op1, op2]),
+    "umul" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UMul, vec![op1, op2]),
+    "umod" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UMod, vec![op1, op2]),
+    "udiv" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UDiv, vec![op1, op2]),
+    "uor"  <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UOr, vec![op1, op2]),
+    "uxor" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UXor, vec![op1, op2]),
+    "uand" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UAnd, vec![op1, op2]),
+    "unot" <op1:Operand>               => Statement::Instruction(CPUInstr::UNot, vec![op1]),
+    "ushl" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UShl, vec![op1, op2]),
+    "ushr" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UShr, vec![op1, op2]),
+
+    // Signed instructions
+    "iadd" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IAdd, vec![op1, op2]),
+    "isub" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::ISub, vec![op1, op2]),
+    "imul" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IMul, vec![op1, op2]),
+    "imod" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IMod, vec![op1, op2]),
+    "idiv" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IDiv, vec![op1, op2]),
+    "ior"  <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IOr, vec![op1, op2]),
+    "ixor" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IXor, vec![op1, op2]),
+    "iand" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IAnd, vec![op1, op2]),
+    "inot" <op1:Operand>               => Statement::Instruction(CPUInstr::INot, vec![op1]),
+    "ishl" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IShl, vec![op1, op2]),
+    "ishr" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IShr, vec![op1, op2]),
+
+    // Floating point instructions
+    "fadd" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FAdd, vec![op1, op2]),
+    "fsub" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FSub, vec![op1, op2]),
+    "fmul" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FMul, vec![op1, op2]),
+    "fdiv" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FDiv, vec![op1, op2]),
+
+    // Logical operators
+    "lor"  <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::LOr, vec![op1, op2]),
+    "lxor" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::LXor, vec![op1, op2]),
+    "land" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::LAnd, vec![op1, op2]),
+    "lnot" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::LNot, vec![op1, op2]),
+
+    // Jump instructions
+    "jump"        <op1:Operand>                 => Statement::Instruction(CPUInstr::Jump, vec![op1]),
+    "jump_if"     <op1:Operand> <op2:Operand>   => Statement::Instruction(CPUInstr::JumpIf, vec![op1, op2]),
+    "jump_if_not" <op1:Operand> <op2:Operand>   => Statement::Instruction(CPUInstr::JumpIfNot, vec![op1, op2]),
+
+    // Unsigned comparison
+    "ueq" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UEqual, vec![op1, op2]),
+    "ugt" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UGreater, vec![op1, op2]),
+    "uge" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::UGreaterEqual, vec![op1, op2]),
+    "ult" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::ULess, vec![op1, op2]),
+    "ule" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::ULessEqual, vec![op1, op2]),
+
+    // Signed comparison
+    "ieq" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IEqual, vec![op1, op2]),
+    "igt" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IGreater, vec![op1, op2]),
+    "ige" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::IGreaterEqual, vec![op1, op2]),
+    "ilt" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::ILess, vec![op1, op2]),
+    "ile" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::ILessEqual, vec![op1, op2]),
+
+    // Float comparison
+    "feq" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FEqual, vec![op1, op2]),
+    "fgt" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FGreater, vec![op1, op2]),
+    "fge" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FGreaterEqual, vec![op1, op2]),
+    "flt" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FLess, vec![op1, op2]),
+    "fle" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::FLessEqual, vec![op1, op2]),
+
+    // Stack and function operations
+    "push" <op1:Operand> => Statement::Instruction(CPUInstr::Push, vec![op1]),
+    "pop"  <op1:Operand> => Statement::Instruction(CPUInstr::Pop, vec![op1]),
+    "call" <op1:Operand> => Statement::Instruction(CPUInstr::Call, vec![op1]),
+    "ret"                => Statement::Instruction(CPUInstr::Ret, vec![]),
+
+    "offset" <op1:Operand> <op2:Operand> => Statement::Instruction(CPUInstr::Offset, vec![op1, op2]),
+
+    // Memory operations
+    "store" <op1:Operand> <op2:Operand>  => Statement::Instruction(CPUInstr::Store, vec![op1, op2]),
+    "load"  <op1:Operand> <op2:Operand>  => Statement::Instruction(CPUInstr::Load, vec![op1, op2]),
+
+    // Syscall
+    // "syscall" => Statement::Instruction(CPUInstr::Syscall,
+
+    // Nop instruction
+    "nop" => Statement::Instruction(CPUInstr::Nop, vec![]),
+
+	// Label Declaration
+	LINES <label:IDENT> LINES => Statement::LabelDecl(label.to_string()),
+};
+
+Operand: Operand = {
+	<Int> => <>,
+	<Float> => <>,
+	<MemAddr> => <>,
+	<Reg> => <>,
+	<Flag> => <>,
+	<label:LABEL> => Operand::Label((&label[1..]).to_string())
+};
+
+Int: Operand = { <INT> => Operand::Int(Signed64::from_str(<>).unwrap())};
+
+Float: Operand = { <f:FLOAT> => Operand::Float(Float64::from_str(<>).unwrap()) };
+
+MemAddr: Operand = { <addr:ADDR> => Operand::Addr(RamAddr(usize::from_str_radix(&addr[2..], 16).unwrap())), };
+
+Reg: Operand = {
+	<reg:REG> => Operand::Register(usize::from_str(&reg[1..]).unwrap()),
+
+	"accu" => Operand::Register(CPU::ACCU_IDX),
+	"ACCU" => Operand::Register(CPU::ACCU_IDX),
+	"_" => Operand::Register(CPU::ACCU_IDX),
+
+	"sb" => Operand::Register(CPU::SB_IDX),
+	"SB" => Operand::Register(CPU::SB_IDX),
+
+	"sp" => Operand::Register(CPU::SP_IDX),
+	"SP" => Operand::Register(CPU::SP_IDX),
+};
+
+Flag: Operand = {
+	"zero" => Operand::Flag(CPUFlag::Zero),
+	"ZERO" => Operand::Flag(CPUFlag::Zero),
+
+	"sign" => Operand::Flag(CPUFlag::Sign),
+	"SIGN" => Operand::Flag(CPUFlag::Sign),
+
+	"overflow" => Operand::Flag(CPUFlag::Overflow),
+	"OVERFLOW" => Operand::Flag(CPUFlag::Overflow),
+};
+
+match {
+	r"-+" => LINES,
+    r"[rR][0-7]" => REG,
+    r"0[xX][0-9a-fA-F]+" => ADDR,
+    r"\^[a-zA-Z0-9_]+" => LABEL,
+    r"[0-9]*\.[0-9]+" => FLOAT,
+    r"[0-9]+" => INT,
+} else {
+    r"[a-zA-Z_][a-zA-Z0-9_]*" => IDENT,
+    r"\s*" => { }, // The default whitespace skipping is disabled if an `ignore pattern` is specified
+    r"//[^\n\r]*[\n\r]*" => { }, // Skip `// comments`
+    r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/" => { },  // Skip `/* comments */`
+    _
+}
+

@@ -1,12 +1,25 @@
 use std::collections::HashMap;
-pub use crate::cpu_core::cpu::{*};
+use crate::cpu_core::cpu::{*};
+
+use super::ast;
+use super::error::AsmError;
+
+use lalrpop_util::lalrpop_mod;
+
+
+lalrpop_mod!(
+    #[allow(clippy::ptr_arg)]
+    #[rustfmt::skip]
+    pub asm,
+    "/my_assembler/asm.rs"
+);
 
 /// Represents an operand
 /// In our CPU "language", there are currently four types of operand (as can be seen in
 /// [`OperandType`]). This enum represents the type of the operand and the value
 /// (for example, a memory address)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Operand {
+enum Operand {
     MemoryAddress(RamAddr),
     Register(usize),
     Flag(CPUFlag),
@@ -49,21 +62,10 @@ impl Operand {
 }
 
 
-/// Represents a "symbol" or a "label" in our assembly language
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Label(String);
-
-impl<T: Into<String>> From<T> for Label {
-    fn from(value: T) -> Self {
-        Self(value.into())
-    }
-}
-
-
 /// Represents a unit in our assembly language which is resolved,
 /// which means that it can be converted into bytes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ResolvedUnit {
+enum ResolvedUnit {
     Instr(CPUInstr),
     Operand(Operand),
 }
@@ -79,7 +81,6 @@ impl ResolvedUnit {
 
     /// Returns the resolved unit represented in bytes
     pub fn as_bytes(&self) -> Vec<u8> {
-
         match self {
             ResolvedUnit::Instr(i) => { vec![i.as_byte()] },
             ResolvedUnit::Operand(o) => o.operand_bytes()
@@ -88,75 +89,14 @@ impl ResolvedUnit {
 }
 
 
-/// Represents a unit in our assembly language which is not resolved,
-/// which means that it cannot yet be converted into bytes.
-/// this happens, for example, when there is a jump instruction, but the real memory address
-/// of the jump is not yet clear
+/// Represents a label the real memory address of which is not yet clear. This may happen when
+/// the user does `jump ^label`. Since the program does not know at what address it's going to be
+/// allocated, the real address of `^label` is unclear until it's resolved in the future.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum UnresolvedJump {
-    Jump(Label),
-    JumpIf(Operand, Label),
-    JumpIfNot(Operand, Label),
-    Call(Label),
-}
+struct UnresolvedAddress(pub String);
 
-impl UnresolvedJump {
-    /// Returns the size of the unresolved unit in bytes
-    /// (this is possible because despite not knowing the real memory address of the jump,
-    /// we know it's size)
-    pub const fn size(&self) -> usize {
-        match self {
-            UnresolvedJump::Jump(_) => {
-                CPU::INSTRUCTION_SIZE + CPU::OPERAND_TYPE_SIZE + CPU::MEMORY_ADDRESS_SIZE
-            }
-            UnresolvedJump::JumpIf(u, _) => {
-                CPU::INSTRUCTION_SIZE + u.size() + CPU::OPERAND_TYPE_SIZE + CPU::MEMORY_ADDRESS_SIZE
-            }
-            UnresolvedJump::JumpIfNot(u, _) => {
-                CPU::INSTRUCTION_SIZE + u.size() + CPU::OPERAND_TYPE_SIZE + CPU::MEMORY_ADDRESS_SIZE
-            }
-            UnresolvedJump::Call(_) => {
-                CPU::INSTRUCTION_SIZE  + CPU::OPERAND_TYPE_SIZE + CPU::MEMORY_ADDRESS_SIZE
-            }
-        }
-    }
-
-    /// Returns the "label" of the jump (the symbol it should jump to)
-    pub fn label(&self) -> &String {
-        match self {
-            UnresolvedJump::Jump(s) => &s.0,
-            UnresolvedJump::JumpIf(_, s) => &s.0,
-            UnresolvedJump::JumpIfNot(_, s) => &s.0,
-            UnresolvedJump::Call(s) => &s.0,
-        }
-    }
-
-    /// Consumes `self` and returns a `Vec<ResolvedUnit>` based on. Requires the real memory address
-    /// so it can be resolved.
-    pub fn resolve(&self, real_addr: RamAddr) -> Vec<ResolvedUnit> {
-        let mut res: Vec<ResolvedUnit> = Vec::with_capacity(3);
-        match self {
-            UnresolvedJump::Jump(_) => {
-                res.push(ResolvedUnit::Instr(CPUInstr::Jump));
-                res.push(ResolvedUnit::Operand(Operand::MemoryAddress(real_addr)));
-            }
-            UnresolvedJump::JumpIf(o, _) => {
-                res.push(ResolvedUnit::Instr(CPUInstr::JumpIf));
-                res.push(ResolvedUnit::Operand(*o));
-                res.push(ResolvedUnit::Operand(Operand::MemoryAddress(real_addr)));
-            },
-            UnresolvedJump::JumpIfNot(o, _) => {
-                res.push(ResolvedUnit::Instr(CPUInstr::JumpIfNot));
-                res.push(ResolvedUnit::Operand(*o));
-                res.push(ResolvedUnit::Operand(Operand::MemoryAddress(real_addr)));
-            },
-            UnresolvedJump::Call(_) => {
-                res.push(ResolvedUnit::Instr(CPUInstr::Call));
-                res.push(ResolvedUnit::Operand(Operand::MemoryAddress(real_addr)));
-            }
-        }
-        res
-    }
+impl UnresolvedAddress {
+    pub const SIZE: usize = 1 + CPU::MEMORY_ADDRESS_SIZE; // operand type 1 byte + address 8 bytes
 }
 
 
@@ -164,30 +104,30 @@ impl UnresolvedJump {
 /// The "unit" can either be resolved or unresolved.
 /// All unresolved units will get resolved in the end when the real address is clear.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AssemblerUnit {
+enum BaseAssemblerUnit {
     Resolved(ResolvedUnit),
-    UnresolvedJump(UnresolvedJump)
+    UnresolvedAddr(UnresolvedAddress)
 }
 
-
-impl AssemblerUnit {
+impl BaseAssemblerUnit {
     /// Returns the size of this assembler "unit" in bytes
     pub const fn size(&self) -> usize {
         match self {
-            AssemblerUnit::Resolved(r) => r.size(),
-            AssemblerUnit::UnresolvedJump(u) => u.size(),
+            BaseAssemblerUnit::Resolved(r) => r.size(),
+            BaseAssemblerUnit::UnresolvedAddr(_) => UnresolvedAddress::SIZE,
         }
     }
 }
 
-/// Represents tha **assembler**, the main "tool" for building our code (byte) for our CPU.
-pub struct Assembler {
+
+/// Represents tha **assembler**, the base "tool" for building byte-code for our CPU.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct _BaseAssembler {
     symbol_table: HashMap<String, usize>,
-    instructions: Vec<AssemblerUnit>
+    instructions: Vec<BaseAssemblerUnit>
 }
 
-
-impl Assembler {
+impl _BaseAssembler {
     pub fn new() -> Self {
         Self {
             symbol_table: HashMap::new(),
@@ -199,149 +139,133 @@ impl Assembler {
     /// This operation:
     /// - Resolves all symbols (based on `start_addr` field which represents the final start address
     ///     of the instructions in RAM)
-    /// - Converts all `ResolvedUnit`-s into bytes
+    /// - Converts all the resulting [`ResolvedUnit`]-s into bytes
     /// - Returns those bytes
-    pub fn as_bytes(&mut self, start_addr: RamAddr) -> Vec<u8> {
-        let mut res: Vec<u8> = Vec::with_capacity(self.total_size());
-        let resolved = self.resolve_symbols(start_addr);
-        for i in resolved {
-            res.extend(i.as_bytes());
-        }
-        res
-    }
-
-    pub fn write_to_ram(&mut self, ram: &mut RAM, start_addr: RamAddr) -> Result<(), ErrorType> {
-        let bytes: Vec<SingleByte> = self.as_bytes(start_addr);
-        ram.write_bytes(&bytes, start_addr)?;
-        Ok(())
+    pub fn to_bytes(&self, start_addr: RamAddr) -> Vec<u8> {
+        self.resolve(start_addr)
+            .iter()
+            .flat_map(|f| f.as_bytes())
+            .collect()
     }
 
     /// Resolves the symbols and returns a vector of resolved units.
-    /// - Consumes `self`
-    pub fn resolve_symbols(&mut self, start_addr: RamAddr) -> Vec<ResolvedUnit> {
-        let mut resolved_instr: Vec<ResolvedUnit> = Vec::with_capacity(self.instructions.len());
-
-        for i in &self.instructions {
-            match i {
-                AssemblerUnit::Resolved(r) => { resolved_instr.push(*r) }
-                AssemblerUnit::UnresolvedJump(u) => {
-                    let relative_addr = self.symbol_table.get(u.label());
-
-                    if relative_addr.is_none() {
-                        println!("Unresolved symbol found!");
-                        break;
-                    }
-                    let real_addr = start_addr.add(*relative_addr.unwrap()).unwrap();
-                    resolved_instr.extend(u.resolve(real_addr));
-                }
-            }
-        }
-
-        resolved_instr
+    fn resolve(&self, start_addr: RamAddr) -> Vec<ResolvedUnit> {
+        self.instructions
+            .iter()
+            .map(|i| match i {
+                BaseAssemblerUnit::Resolved(u) => *u,
+                BaseAssemblerUnit::UnresolvedAddr(u) => {
+                    let real_addr = start_addr.add(*self.symbol_table.get(&u.0).unwrap()).unwrap();
+                    ResolvedUnit::Operand(Operand::MemoryAddress(real_addr))
+            }})
+            .collect()
     }
 
+
     /// Adds a [`CPUInstr`] to the instructions
-    pub fn add_instr(&mut self, instr: CPUInstr) {
+    fn add_instr(&mut self, instr: CPUInstr) {
         self.add_resolved(ResolvedUnit::Instr(instr));
     }
 
     /// Adds a [`RamAddr`] to the instructions
-    pub fn add_addr(&mut self, addr: RamAddr) {
+    fn add_addr(&mut self, addr: RamAddr) {
         self.add_resolved(ResolvedUnit::Operand(Operand::MemoryAddress(addr)));
     }
 
     /// Adds a register to the instructions
-    pub fn add_reg(&mut self, reg: usize) {
+    fn add_reg(&mut self, reg: usize) {
         self.add_resolved(ResolvedUnit::Operand(Operand::Register(reg)));
     }
 
-    /// Adds the accumulator register to the instructions
-    pub fn add_accu(&mut self) {
-        self.add_reg(CPU::GEN_REG_COUNT);
-    }
-
-    /// Adds the sp register to the instructions
-    pub fn add_sp(&mut self) {
-        self.add_reg(CPU::SP_IDX);
-    }
-
-    /// Adds the sb register to the instructions
-    pub fn add_sb(&mut self) {
-        self.add_reg(CPU::SB_IDX);
-    }
-
     /// Adds a [`CPUFlag`] to the instructions
-    pub fn add_flag(&mut self, flag: CPUFlag) {
+    fn add_flag(&mut self, flag: CPUFlag) {
         self.add_resolved(ResolvedUnit::Operand(Operand::Flag(flag)));
     }
 
     /// Adds an immediate value to the instructions
-    pub fn add_imm(&mut self, imm: EightBytes) {
+    fn add_imm(&mut self, imm: EightBytes) {
         self.add_resolved(ResolvedUnit::Operand(Operand::Immediate(imm)));
     }
 
     /// Add a float to the instruction. In reality, this method
     /// reinterprets the float's bytes as integer bytes in does `add_imm`
-    pub fn add_float(&mut self, f: Float64) {
+    fn add_float(&mut self, f: Float64) {
         self.add_imm(f.reinterpret())
     }
 
-    /// Adds a [`CPUInstr::Jump`] to the instructions with specified label
-    pub fn add_jump(&mut self, label: Label) {
-        self.add_unresolved_jump(UnresolvedJump::Jump(label));
-    }
-
-    /// Adds a [`CPUInstr::JumpIf`] to the instructions with specified label
-    pub fn add_jump_if(&mut self, op: Operand, sym: Label) {
-        self.add_unresolved_jump(UnresolvedJump::JumpIf(op, sym));
-    }
-
-    /// Adds a [`CPUInstr::JumpIfNot`] to the instructions with specified label
-    pub fn add_jump_if_not(&mut self, op: Operand, sym: Label) {
-        self.add_unresolved_jump(UnresolvedJump::JumpIfNot(op, sym));
-    }
-
-    /// Adds a [`CPUInstr::Call`] to the instructions with specified label
-    pub fn add_call(&mut self, sym: Label) {
-        self.add_unresolved_jump(UnresolvedJump::Call(sym));
-    }
 
     /// Adds a new "label". This operation saves current "relative" address,
     /// so the jump instructions' real addresses can be resolved at the end.
-    pub fn add_label(&mut self, sym: Label) {
-        let relative_address = self.total_size();
-        self.symbol_table.insert(sym.0, relative_address);
-    }
-
-    /// Read 8 bytes at SB offset by offset (in reality, offset+1, see `execute_offset()` CPU method
-    /// for more information) and load the value to a register
-    pub fn add_get_sb(&mut self, offset: Signed64, register: usize) {
-        self.add_instr(CPUInstr::Offset);
-        self.add_sb();
-        self.add_imm(offset + 1);
-        self.add_instr(CPUInstr::Load);
-        self.add_accu();
-        self.add_reg(register);
-    }
-
-    /// Returns current total size of our "code" in bytes
-    pub fn total_size(&self) -> usize {
-        self.instructions.iter().map(|u| u.size()).sum()
+    fn add_label(&mut self, sym: String) {
+        let relative_index = self.size();
+        self.symbol_table.insert(sym, relative_index);
     }
 
     /// Adds a [`ResolvedUnit`] to the instructions
     fn add_resolved(&mut self, u: ResolvedUnit) {
-        self.instructions.push(AssemblerUnit::Resolved(u));
+        self.instructions.push(BaseAssemblerUnit::Resolved(u));
     }
 
-    /// Adds a [`UnresolvedJump`] to the instructions
-    fn add_unresolved_jump(&mut self, u: UnresolvedJump) {
-        self.instructions.push(AssemblerUnit::UnresolvedJump(u));
+    /// Adds a [`UnresolvedAddress`] to the instructions
+    fn add_unresolved_addr(&mut self, label: String) {
+        self.instructions.push(BaseAssemblerUnit::UnresolvedAddr(UnresolvedAddress(label)))
+    }
+
+    /// Returns current total size of the instructions
+    pub fn size(&self) -> usize {
+        self.instructions.iter().map(|u| u.size()).sum()
     }
 }
 
-impl Default for Assembler {
+impl Default for _BaseAssembler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Assembler {
+    code: String,
+}
+
+impl Assembler {
+    pub fn from<S: Into<String>>(code: S) -> Self {
+        Self { code: code.into() }
+    }
+
+    //noinspection ALL
+    pub fn parse(&self) -> Result<_BaseAssembler, AsmError> {
+        use ast::{Statement, Operand};
+
+        let mut assembler = _BaseAssembler::new();
+
+        let result: Result<Vec<Statement>, _> = asm::ProgramParser::new().parse(self.code.as_str());
+        let statements = result.map_err(|e| AsmError::ParserError(e.to_string()))?;
+
+        for statement in statements {
+            match statement {
+                Statement::Instruction(instr, operands) => {
+                    assembler.add_instr(instr);
+
+                    for operand in operands {
+                        match operand {
+                            Operand::Int(o) => assembler.add_imm(o),
+                            Operand::Float(o) => assembler.add_float(o),
+                            Operand::Addr(o) => assembler.add_addr(o),
+                            Operand::Register(o) => assembler.add_reg(o),
+                            Operand::Flag(o) => assembler.add_flag(o),
+                            Operand::Label(o) => assembler.add_unresolved_addr(o),
+                        }
+                    }
+                }
+
+                Statement::LabelDecl(label) => {
+                    assembler.add_label(label);
+                }
+            }
+        }
+
+        Ok(assembler)
     }
 }

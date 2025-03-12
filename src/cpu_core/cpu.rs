@@ -79,7 +79,7 @@ pub enum CPUInstr {
     Load,   // Read 8 bytes from a memory address to a register
 
     // Syscall instruction
-    Syscall,
+    // Syscall,
 
     // Nop instruction - does literally nothing
     Nop,
@@ -136,7 +136,7 @@ impl CPUInstr {
         STORE,
         LOAD,
 
-        SYSCALL,
+        // SYSCALL,
 
         NOP
      );
@@ -218,7 +218,7 @@ impl CPUInstr {
 
             CPUInstr::Offset => Self::OFFSET,
 
-            CPUInstr::Syscall => Self::SYSCALL,
+            // CPUInstr::Syscall => Self::SYSCALL,
 
             CPUInstr::Nop => Self::NOP,
         }
@@ -300,7 +300,7 @@ impl CPUInstr {
             Self::STORE => Ok(CPUInstr::Store),
             Self::LOAD => Ok(CPUInstr::Load),
 
-            Self::SYSCALL => Ok(CPUInstr::Syscall),
+            // Self::SYSCALL => Ok(CPUInstr::Syscall),
 
             Self::NOP => Ok(CPUInstr::Nop),
 
@@ -604,7 +604,7 @@ impl CPU {
             CPUInstr::Offset => self.execute_offset(),
             CPUInstr::Store => self.execute_store(),
             CPUInstr::Load => self.execute_load(),
-            CPUInstr::Syscall => self.execute_syscall(),
+            // CPUInstr::Syscall => self.execute_syscall(),
             CPUInstr::Nop => Ok(())
         };
 
@@ -1084,7 +1084,7 @@ impl CPU {
     }
 
 
-    fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
+    // fn execute_syscall(&mut self) -> Result<(), ErrorType> { todo!() }
 }
 
 
@@ -1729,13 +1729,13 @@ impl CPU {
         for (i, chunk)  in self.ram.mem.chunks(16).enumerate() {
             let mut s = String::new();
             for (j, byte) in chunk.iter().enumerate() {
+                s.push_str(byte.to_string().as_str());
+                s.push(' ');
+
                 if RamAddr(i * 16 + j) == sp {
                     s.push('|');
                     s.push(' ');
                 }
-                
-                s.push_str(byte.to_string().as_str());
-                s.push(' ');
             }
             println!("{}", s);
         }
