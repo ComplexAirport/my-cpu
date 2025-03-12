@@ -313,6 +313,17 @@ impl Assembler {
         self.symbol_table.insert(sym.0, relative_address);
     }
 
+    /// Read 8 bytes at SB offset by offset (in reality, offset+1, see `execute_offset()` CPU method
+    /// for more information) and load the value to a register
+    pub fn add_get_sb(&mut self, offset: Signed64, register: usize) {
+        self.add_instr(CPUInstr::Offset);
+        self.add_sb();
+        self.add_imm(offset + 1);
+        self.add_instr(CPUInstr::Load);
+        self.add_accu();
+        self.add_reg(register);
+    }
+
     /// Returns current total size of our "code" in bytes
     pub fn total_size(&self) -> usize {
         self.instructions.iter().map(|u| u.size()).sum()
@@ -326,5 +337,11 @@ impl Assembler {
     /// Adds a [`UnresolvedJump`] to the instructions
     fn add_unresolved_jump(&mut self, u: UnresolvedJump) {
         self.instructions.push(AssemblerUnit::UnresolvedJump(u));
+    }
+}
+
+impl Default for Assembler {
+    fn default() -> Self {
+        Self::new()
     }
 }

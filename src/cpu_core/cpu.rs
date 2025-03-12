@@ -411,7 +411,12 @@ pub struct CPU {
     /// Base stack pointer
     sb: RamAddr,
 
-    /// Current stack pointer
+    /// Current stack pointer \
+    /// Points to first memory address after the stack like this: \
+    /// ```plain
+    /// ... 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 ...
+    ///                              sp ^   ^ stack ends here
+    /// ```
     sp: RamAddr,
 
     /// The minimum address the stack can grow to (stack grows downwards)
@@ -993,7 +998,26 @@ impl CPU {
     ///
     /// note:
     /// - op_t1 can ONLY be [`OperandType::MemoryAddress`] or [`OperandType::Register`]
-    /// - **op2 is interpreted as bits count, not byte**
+    /// - op2 is interpreted as bytes count
+    ///
+    /// NOTE: To get a value at (sb + offset), one must do Offset sb (offset+1) \
+    /// Here is why:
+    /// ```plain
+    /// 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 2 2 2 2
+    ///                                       ^ sb
+    /// Offset sb -8
+    ///                         _______________
+    /// 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 2 2 2 2
+    ///                       ^ offset sb
+    /// ```
+    /// Now when we do `Load sb`, the bytes loaded will be `0 1 1 1 1 2 2 2`, not
+    /// `1 1 1 1 2 2 2 2`. If we want to get the latter, we would need to do `Offset sb -7`
+    ///
+    /// So the algorithm to get bytes at `[offset; offset + 7]` is:
+    /// ```plain
+    /// Offset sb (offset + 1)
+    /// Load (register) accu
+    /// ```
     fn execute_offset(&mut self) -> Result<(), ErrorType> {
         let mut addr = self.extract_addr()?;
         let offset: Signed64 = self.extract_operand()?.reinterpret::<Signed64>();
@@ -1004,8 +1028,8 @@ impl CPU {
             self.set_accu_reg(RegType::MAX);
             return Ok(());
         }
-
-        let absolute_offset = offset.unsigned_abs().wrapping_add(1) as usize;
+        
+        let absolute_offset = offset.unsigned_abs() as usize;
 
         // Do the offset
         if offset.is_negative() {
@@ -1013,8 +1037,7 @@ impl CPU {
         } else {
             addr.inc(absolute_offset)?;
         }
-
-        println!("Offset addr is {addr:?}");
+        
         let result = addr_to_reg_type(addr);
 
         // Set the accumulator register
@@ -1407,32 +1430,78 @@ impl CPU {
 
 /// Stack related methods
 impl CPU {
-    /// Pushes an 8-byte value to the stack
+    /// Pushes an 8-byte value to the stack \
+    /// For example, let's say we're pushing the value `25` \
+    /// Stack before:
+    /// ```plain
+    /// ... 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    ///                                         ^ sp
+    /// ```
+    /// Stack after:
+    /// ```plain
+    ///                             pushed value
+    ///                           ________________
+    /// ... 0 0 0 0 0 0 0 0 0 0 0 25 0 0 0 0 0 0 0
+    ///                         ^ sp
+    /// ```
     pub fn push_to_stack(&mut self, value: EightBytes) -> Result<(), ErrorType> {
         // Decrement the stack pointer, create more space
         self.dec_sp(8)?;
 
-        // Since stack grows downwards, the byte exactly at SP is NOT included in the stack
-        // So the whole stack is (SP; end]
-        // That's why we add 1 to SP for the writing operation
-        let write_addr = self.get_sp().add(1)?;
+        // Before:
+        //                           value to write
+        //                           _______________
+        // ... 0 0 0 0 0 0 0 0 0 0 0 1 2 3 4 5 6 7 8
+        //                                         ^ sp before
+        //
+        // After:
+        //                           value to write
+        //                           _______________
+        // ... 0 0 0 0 0 0 0 0 0 0 0 1 2 3 4 5 6 7 8
+        //                         ^ sp after
+        //
+        // As you can see, the value must be written to [sp+1; sp+8]
+        let write_start_addr = self.get_sp().add(1)?; // sp+1
 
         // Write the value to the RAM
         let bytes = value.to_bytes();
-        self.ram.write_bytes(&bytes, write_addr)?;
+        self.ram.write_bytes(&bytes, write_start_addr)?;
 
         Ok(())
     }
 
-    /// Pops an 8-byte value from the stack
+    /// Pops an 8-byte value from the stack \
+    /// For example, let's say we're popping the value `25` \
+    /// Stack before:
+    /// ```plain
+    ///                             value to pop
+    ///                           ________________
+    /// ... 0 0 0 0 0 0 0 0 0 0 0 25 0 0 0 0 0 0 0
+    ///                         ^ sp
+    /// ```
+    /// Stack after:
+    /// ```plain
+    /// ... 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    ///                                         ^ sp
+    /// ```
     pub fn pop_from_stack(&mut self) -> Result<EightBytes, ErrorType> {
-        // Since stack grows downwards, the byte exactly at SP is NOT included in the stack
-        // So the whole stack is (SP; end]
-        // That's why we add 1 to SP for the reading operation
-        let read_from = self.get_sp().add(1)?;
+        // Before:
+        //                            value to read
+        //                           _______________
+        // ... 0 0 0 0 0 0 0 0 0 0 0 1 2 3 4 5 6 7 8
+        //                         ^ sp before
+        //
+        // After:
+        //                           value to read
+        //                           _______________
+        // ... 0 0 0 0 0 0 0 0 0 0 0 1 2 3 4 5 6 7 8
+        //                                         ^ sp after
+        //
+        // As you can see, we must read the values at [sp+1; sp+8]
+        let read_from = self.get_sp().add(1)?; // sp + 1
 
         // Read the value from the RAM
-        let bytes = self.ram.read_bytes::<8>(read_from)?;
+        let bytes = self.ram.read_bytes::<8>(read_from)?; // read [sp+1; sp+8]
 
         // Convert the bytes to `EightBytes`
         let value = EightBytes::from_bytes(bytes);
@@ -1441,13 +1510,13 @@ impl CPU {
         self.inc_sp(8)?;
 
         // todo: maybe remove this section later?
-        // currently it's required so the code doesn't accidentally start executing wrong thing
-        // however, is `set_sp()`, this case is not handled
+        // currently it's here so the code doesn't accidentally start executing wrong
+        // instruction bytes.
+        // (however in `set_sp()` this case is not handled TODO)
         self.ram.write_bytes(&[0u8; 8], read_from)?;
 
         Ok(value)
     }
-
 
     /// Returns the value of stack base pointer
     pub const fn get_sb(&self) -> RamAddr { self.sb }
@@ -1660,13 +1729,13 @@ impl CPU {
         for (i, chunk)  in self.ram.mem.chunks(16).enumerate() {
             let mut s = String::new();
             for (j, byte) in chunk.iter().enumerate() {
-                s.push_str(byte.to_string().as_str());
-                s.push(' ');
-
                 if RamAddr(i * 16 + j) == sp {
                     s.push('|');
                     s.push(' ');
                 }
+                
+                s.push_str(byte.to_string().as_str());
+                s.push(' ');
             }
             println!("{}", s);
         }
